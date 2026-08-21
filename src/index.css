@@ -1,0 +1,441 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Backgrounds — layered dark */
+  --bg-base:      #0a0a0f;   /* true base, near-black with blue tint */
+  --bg-surface:   #111118;   /* card surfaces */
+  --bg-elevated:  #1a1a26;   /* modals, dropdowns, hover states */
+  --bg-subtle:    #16161f;   /* sidebar, secondary panels */
+
+  /* Borders — barely visible */
+  --border-dim:   rgba(255, 255, 255, 0.04);
+  --border-base:  rgba(255, 255, 255, 0.08);
+  --border-strong:rgba(255, 255, 255, 0.14);
+
+  /* Text */
+  --text-primary:   #f4f4f6;
+  --text-secondary: #8b8b9e;
+  --text-tertiary:  #4a4a5e;
+
+  /* Brand — indigo-violet spectrum */
+  --brand-primary:   #6366f1;   /* indigo-500 */
+  --brand-secondary: #818cf8;   /* indigo-400 */
+  --brand-glow:      rgba(99, 102, 241, 0.15);
+  --brand-subtle:    rgba(99, 102, 241, 0.08);
+
+  /* Semantic colours */
+  --red:    #ef4444;
+  --amber:  #f59e0b;
+  --green:  #22c55e;
+  --teal:   #14b8a6;
+  --purple: #a855f7;
+  --orange: #f97316;
+
+  /* Category colours — used consistently everywhere */
+  --cat-roads:       #f97316;
+  --cat-water:       #38bdf8;
+  --cat-electricity: #fbbf24;
+  --cat-sanitation:  #a855f7;
+  --cat-health:      #f43f5e;
+  --cat-education:   #34d399;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Spacing — 4px grid */
+  --space-1: 4px;   --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px;  --space-5: 20px; --space-6: 24px;
+  --space-8: 32px;  --space-10: 40px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography Classes */
+.type-display {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.type-h1 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.type-h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.type-h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.type-body {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.6;
+}
+
+.type-small {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+}
+
+.type-micro {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+/* Base Card Style */
+.card-linear {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: none;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+.card-hover-lift {
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+/* Non-hoverable or static card container */
+.card-linear-static {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: none;
+}
+
+/* Button Classes */
+.btn-primary {
+  background: var(--brand-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 150ms ease;
+  user-select: none;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 150ms ease;
+  user-select: none;
+}
+
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.btn-icon:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* Input Fields */
+.input-linear {
+  background: var(--bg-base);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  font-size: 15px;
+  font-family: var(--font-sans);
+  width: 100%;
+  transition: all 150ms ease;
+}
+
+.input-linear::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input-linear:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--brand-subtle);
+}
+
+/* Shimmer base */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-surface) 0%,
+    var(--bg-elevated) 50%,
+    var(--bg-surface) 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Dividers */
+.divider-dim {
+  border-top: 1px solid var(--border-dim);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Bento Grid */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ========================================================================= */
+/* MOTION & MICRO-INTERACTIONS (PREFERS-REDUCED-MOTION WRAPPER)              */
+/* ========================================================================= */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 1. Page Transitions */
+  @keyframes pageTransitionEnter {
+    0% {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .page-transition-enter {
+    animation: pageTransitionEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* 3. Heatmap Entrance */
+  @keyframes heatmapFadeIn {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  .heatmap-enter {
+    animation: heatmapFadeIn 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* 4. Priority Panel Items Entrance */
+  @keyframes prioritySlideIn {
+    0% {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .priority-item-animate {
+    opacity: 0;
+    animation: prioritySlideIn 200ms ease-out forwards;
+  }
+
+  /* 6. Live Pulse (0 to 8px ring) */
+  @keyframes livePulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+  }
+
+  .live-pulse {
+    animation: livePulse 2s infinite;
+  }
+
+  /* 7. Submission Success checkmark SVG draws itself */
+  @keyframes circleDraw {
+    0% {
+      stroke-dasharray: 0 283;
+      stroke-dashoffset: 0;
+      stroke: var(--brand-primary);
+    }
+    60% {
+      stroke-dasharray: 283 283;
+      stroke: var(--brand-primary);
+    }
+    100% {
+      stroke-dasharray: 283 283;
+      stroke: var(--green);
+    }
+  }
+
+  @keyframes checkDraw {
+    0% {
+      stroke-dasharray: 0 40;
+      stroke-dashoffset: 0;
+      stroke: var(--brand-primary);
+    }
+    50% {
+      stroke-dasharray: 0 40;
+      stroke: var(--brand-primary);
+    }
+    100% {
+      stroke-dasharray: 40 40;
+      stroke: var(--green);
+    }
+  }
+
+  .animate-success-circle {
+    stroke-dasharray: 283;
+    animation: circleDraw 700ms cubic-bezier(0.65, 0, 0.45, 1) forwards;
+  }
+
+  .animate-success-check {
+    stroke-dasharray: 40;
+    animation: checkDraw 700ms cubic-bezier(0.65, 0, 0.45, 1) forwards;
+  }
+
+  /* 8. Card Hover Lift */
+  .card-hover-lift:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+  }
+
+  .card-linear:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-secondary);
+    box-shadow: 0 0 20px var(--brand-glow);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .btn-ghost:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  /* 10. Shimmer Skeleton (left-to-right, 1.5s infinite) */
+  @keyframes shimmerLtr {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .skeleton-shimmer {
+    animation: shimmerLtr 1.5s infinite linear;
+  }
+}
