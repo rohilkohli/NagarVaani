@@ -1,5 +1,12 @@
 {
   "name": "NagarVaani",
+  "tagline": "Multilingual AI Platform for Citizen Infrastructure Intelligence",
+  "track": "AI for Digital Public Infrastructure & Governance",
+  "theme": "BRICS: Innovation",
+  "hackathon": "Build with AI: Code for Communities — Second Edition",
+  "team": "Solo",
+  "tech": ["Gemini 3.7 Flash", "Firebase", "Google Maps", "deck.gl", "React", "TypeScript"],
+  "demo_day": "2026-09-04",
   "description": "Multilingual AI platform for aggregating citizen infrastructure complaints and surfacing priority recommendations to government policymakers across BRICS nations.",
   "requestFramePermissions": ["geolocation", "camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

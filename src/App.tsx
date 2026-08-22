@@ -39,25 +39,21 @@ export default function App() {
   };
 
   const handleSeedData = async () => {
-    try {
-      for (const item of ALL_SEED_SUBMISSIONS.slice(0, 10)) {
-        await addDoc(collection(db, "submissions"), {
-          text: item.text,
-          language: item.language,
-          category: item.category,
-          urgency: item.urgency,
-          summary_english: item.summary_english,
-          district: item.district,
-          state: item.state,
-          country: item.country,
-          lat: item.lat,
-          lng: item.lng,
-          created_at: item.created_at.toISOString(),
-          status: item.status,
-        });
-      }
-    } catch (e) {
-      console.warn("Firestore seed notice (falling back to memory state):", e);
+    for (const item of ALL_SEED_SUBMISSIONS) {
+      await addDoc(collection(db, "submissions"), {
+        text: item.text,
+        language: item.language,
+        category: item.category,
+        urgency: item.urgency,
+        summary_english: item.summary_english,
+        district: item.district,
+        state: item.state,
+        country: item.country,
+        lat: item.lat,
+        lng: item.lng,
+        created_at: item.created_at.toISOString(),
+        status: item.status,
+      });
     }
   };
 
@@ -70,11 +66,47 @@ export default function App() {
       if (typeof window !== "undefined") {
         localStorage.setItem('nv_seeded', 'true');
       }
-      setToastMsg("✅ Demo data loaded — 50 submissions seeded");
-      setTimeout(() => setToastMsg(null), 4000);
+      setToastMsg("✅ 60 demo submissions loaded across 5 BRICS nations");
+      setTimeout(() => setToastMsg(null), 5000);
     } catch (e) {
       console.error("Error refreshing demo data:", e);
     }
+  };
+
+  const handleExportCSV = () => {
+    const data = ALL_SEED_SUBMISSIONS;
+
+    const headers = [
+      'ID', 'Category', 'District', 'State', 'Country',
+      'Urgency', 'Summary', 'Language', 'Date', 'Status'
+    ];
+
+    const rows = data.map(s => [
+      s.id || '',
+      s.category,
+      s.district,
+      s.state,
+      s.country,
+      s.urgency,
+      `"${(s.summary_english || s.text || '').replace(/"/g, "'")}"`,
+      s.language,
+      s.created_at instanceof Date 
+        ? s.created_at.toISOString().split('T')[0]
+        : new Date(s.created_at).toISOString().split('T')[0],
+      s.status
+    ]);
+
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nagarvaani-submissions-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setToastMsg("📥 CSV exported successfully");
+    setTimeout(() => setToastMsg(null), 3000);
   };
 
   useEffect(() => {
@@ -97,11 +129,16 @@ export default function App() {
   useEffect(() => {
     const hasSeeded = localStorage.getItem('nv_seeded');
     if (!hasSeeded) {
-      handleSeedData().then(() => {
-        localStorage.setItem('nv_seeded', 'true');
-        setToastMsg("✅ Demo data loaded — 50 submissions seeded");
-        setTimeout(() => setToastMsg(null), 4000);
-      });
+      handleSeedData()
+        .then(() => {
+          localStorage.setItem('nv_seeded', 'true');
+          setToastMsg("✅ 60 demo submissions loaded across 5 BRICS nations");
+          setTimeout(() => setToastMsg(null), 5000);
+        })
+        .catch(() => {
+          // Don't set the flag — allow retry on next load
+          console.log("Seed will retry on next load when Firebase is configured");
+        });
     }
   }, []);
 
@@ -222,6 +259,7 @@ export default function App() {
         <Header
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
+          onExportReport={handleExportCSV}
           isMobileMenuOpen={isMobileMenuOpen}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />

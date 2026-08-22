@@ -23,20 +23,23 @@ const INDIAN_DISTRICT_COORDS: Record<string, DistrictInfo> = {
 };
 
 const BRICS_LOCATIONS: DistrictInfo[] = [
-  // 3 Brazil
+  // Brazil — 3 cities
   { district: "São Paulo", state: "SP", country: "Brazil", lat: -23.5505, lng: -46.6333 },
-  { district: "São Paulo", state: "SP", country: "Brazil", lat: -23.5615, lng: -46.6559 },
   { district: "Rio de Janeiro", state: "RJ", country: "Brazil", lat: -22.9068, lng: -43.1729 },
-  // 3 South Africa
+  { district: "Salvador", state: "BA", country: "Brazil", lat: -12.9714, lng: -38.5014 },
+  
+  // South Africa — 3 cities
   { district: "Johannesburg", state: "Gauteng", country: "South Africa", lat: -26.2041, lng: 28.0473 },
-  { district: "Johannesburg", state: "Gauteng", country: "South Africa", lat: -26.1952, lng: 28.034 },
   { district: "Cape Town", state: "Western Cape", country: "South Africa", lat: -33.9249, lng: 18.4241 },
-  // 2 Russia
+  { district: "Durban", state: "KwaZulu-Natal", country: "South Africa", lat: -29.8587, lng: 31.0218 },
+  
+  // Russia — 2 cities
   { district: "Moscow", state: "Central", country: "Russia", lat: 55.7558, lng: 37.6173 },
-  { district: "Moscow", state: "Central", country: "Russia", lat: 55.7601, lng: 37.625 },
-  // 2 China
+  { district: "Saint Petersburg", state: "Northwest", country: "Russia", lat: 59.9311, lng: 30.3609 },
+  
+  // China — 2 cities
   { district: "Beijing", state: "Beijing", country: "China", lat: 39.9042, lng: 116.4074 },
-  { district: "Beijing", state: "Beijing", country: "China", lat: 39.9289, lng: 116.3883 },
+  { district: "Shanghai", state: "Shanghai", country: "China", lat: 31.2304, lng: 121.4737 },
 ];
 
 function getRandomDateInLast30Days(): Date {
@@ -323,7 +326,7 @@ export function generateIndianSubmissions(): Submission[] {
   return list;
 }
 
-// Generate the 10 BRICS submissions
+// Generate the 20 expanded BRICS submissions across all 10 locations (2 per city)
 export function generateBricsSubmissions(): Submission[] {
   const bricsData: {
     loc: DistrictInfo;
@@ -333,9 +336,11 @@ export function generateBricsSubmissions(): Submission[] {
     summary: string;
     lang: string;
   }[] = [
-    // 3 Brazil
+    // -------------------------------------------------------------
+    // BRAZIL — São Paulo (2 items)
+    // -------------------------------------------------------------
     {
-      loc: BRICS_LOCATIONS[0],
+      loc: BRICS_LOCATIONS[0], // São Paulo
       text: "Buraco enorme e sem sinalização na Avenida Paulista causando acidentes graves de motos e carros.",
       category: "roads",
       urgency: 4,
@@ -343,49 +348,119 @@ export function generateBricsSubmissions(): Submission[] {
       lang: "Portuguese (Português)",
     },
     {
-      loc: BRICS_LOCATIONS[1],
-      text: "Falta de abastecimento de água potável no bairro periférico há mais de quatro dias consecutivos.",
+      loc: BRICS_LOCATIONS[0], // São Paulo
+      text: "Falta de abastecimento de água potável no bairro periférico da Zona Leste há mais de quatro dias consecutivos.",
       category: "water",
-      urgency: 5,
-      summary: "No clean drinking water supply in peripheral neighborhood for four consecutive days.",
+      urgency: 4,
+      summary: "Drinking water supply cut off in East Zone peripheral neighborhoods for 4 consecutive days.",
       lang: "Portuguese (Português)",
     },
+
+    // -------------------------------------------------------------
+    // BRAZIL — Rio de Janeiro (2 items)
+    // -------------------------------------------------------------
     {
-      loc: BRICS_LOCATIONS[2],
-      text: "Bueiro entupido e esgoto a céu aberto vazando diretamente na calçada em frente à escola pública.",
+      loc: BRICS_LOCATIONS[1], // Rio de Janeiro
+      text: "Bueiro entupido e esgoto a céu aberto vazando diretamente na calçada em frente à escola municipal.",
       category: "sanitation",
       urgency: 4,
-      summary: "Clogged storm drain and open sewage leaking in front of public primary school.",
+      summary: "Clogged storm drain and open sewage leaking directly in front of municipal school.",
       lang: "Portuguese (Português)",
     },
-    // 3 South Africa
     {
-      loc: BRICS_LOCATIONS[3],
-      text: "Loadshedding damaged municipal transformer leaving community clinic without backup refrigeration.",
+      loc: BRICS_LOCATIONS[1], // Rio de Janeiro
+      text: "Postes de iluminação pública apagados há duas semanas no túnel principal, facilitando assaltos.",
+      category: "electricity",
+      urgency: 3,
+      summary: "Public lighting out in main tunnel for two weeks, creating severe safety risks.",
+      lang: "Portuguese (Português)",
+    },
+
+    // -------------------------------------------------------------
+    // BRAZIL — Salvador (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[2], // Salvador
+      text: "Alagamento severo e bueiros rompidos na Avenida ACM após fortes chuvas bloqueando o tráfego e invadindo comércios.",
+      category: "sanitation",
+      urgency: 4,
+      summary: "Severe flooding and collapsed drainage culvert on ACM Avenue blocking traffic and flooding shops.",
+      lang: "Portuguese (Português)",
+    },
+    {
+      loc: BRICS_LOCATIONS[2], // Salvador
+      text: "Risco iminente de deslizamento de terra em encosta habitada sem contenção após temporal no Subúrbio Ferroviário.",
+      category: "roads",
+      urgency: 4,
+      summary: "Imminent landslide risk and crumbling hillside infrastructure in Railway Suburbs without municipal retaining wall.",
+      lang: "Portuguese (Português)",
+    },
+
+    // -------------------------------------------------------------
+    // SOUTH AFRICA — Johannesburg (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[3], // Johannesburg
+      text: "Loadshedding damaged municipal transformer leaving community health clinic without vaccine cold-chain refrigeration.",
       category: "electricity",
       urgency: 5,
-      summary: "Blown power transformer leaves local health clinic without vaccine refrigeration.",
+      summary: "Blown power transformer leaves local health clinic without backup vaccine cold storage.",
       lang: "English",
     },
     {
-      loc: BRICS_LOCATIONS[4],
-      text: "Severely corroded water main pipe leaking high pressure clean water into storm stormwater drains.",
-      category: "water",
-      urgency: 3,
-      summary: "Severe municipal pipeline corrosion leaking high volume potable water.",
-      lang: "English",
-    },
-    {
-      loc: BRICS_LOCATIONS[5],
-      text: "Deep road potholes on township arterial road damaging minibus taxis during morning commuter rush.",
+      loc: BRICS_LOCATIONS[3], // Johannesburg
+      text: "Deep road potholes on Soweto arterial expressway damaging minibus commuter taxis daily.",
       category: "roads",
       urgency: 4,
       summary: "Severe potholes damaging public transport minibus taxis on main commuter route.",
       lang: "English / Zulu",
     },
-    // 2 Russia
+
+    // -------------------------------------------------------------
+    // SOUTH AFRICA — Cape Town (2 items)
+    // -------------------------------------------------------------
     {
-      loc: BRICS_LOCATIONS[6],
+      loc: BRICS_LOCATIONS[4], // Cape Town
+      text: "Severely corroded water main pipe leaking high pressure clean treated water into coastal storm drains.",
+      category: "water",
+      urgency: 3,
+      summary: "Corroded municipal water main discharging massive volumes of treated potable water.",
+      lang: "English",
+    },
+    {
+      loc: BRICS_LOCATIONS[4], // Cape Town
+      text: "Informal settlement sanitation chemical toilets unserviced for 10 days, posing extreme cholera risk.",
+      category: "sanitation",
+      urgency: 4,
+      summary: "Unserviced municipal chemical toilets in informal settlement creating acute health hazards.",
+      lang: "English / Xhosa",
+    },
+
+    // -------------------------------------------------------------
+    // SOUTH AFRICA — Durban (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[5], // Durban
+      text: "Critical municipal water supply shortage in Durban North; residential taps completely dry for 5 days with no relief tankers.",
+      category: "water",
+      urgency: 4,
+      summary: "Critical water supply shortage in Durban North; residential taps dry for 5 consecutive days without relief tankers.",
+      lang: "English",
+    },
+    {
+      loc: BRICS_LOCATIONS[5], // Durban
+      text: "Collapsed stormwater canal near Bayhead logistics corridor causing heavy container freight bottlenecks.",
+      category: "roads",
+      urgency: 3,
+      summary: "Collapsed stormwater culvert on port logistics corridor causing heavy freight congestion.",
+      lang: "English / Zulu",
+    },
+
+    // -------------------------------------------------------------
+    // RUSSIA — Moscow (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[6], // Moscow
       text: "Прорыв трубы центрального отопления в жилом квартале; нет горячей воды и тепла при температуре -15°C.",
       category: "water",
       urgency: 5,
@@ -393,28 +468,71 @@ export function generateBricsSubmissions(): Submission[] {
       lang: "Russian (Русский)",
     },
     {
-      loc: BRICS_LOCATIONS[7],
-      text: "Глубокие ямы на дорожном покрытии МКАД после таяния снега повреждают подвеску автомобилей.",
+      loc: BRICS_LOCATIONS[6], // Moscow
+      text: "Глубокие ямы на дорожном покрытии внешней стороны МКАД после таяния снега повреждают колесные диски.",
       category: "roads",
       urgency: 4,
-      summary: "Post-winter thaw potholes on outer ring road damaging automotive suspensions.",
+      summary: "Post-winter thaw potholes on outer ring road damaging automotive wheels and suspensions.",
       lang: "Russian (Русский)",
     },
-    // 2 China
+
+    // -------------------------------------------------------------
+    // RUSSIA — Saint Petersburg (2 items)
+    // -------------------------------------------------------------
     {
-      loc: BRICS_LOCATIONS[8],
-      text: "小区主供水管道爆裂，导致三栋居民楼停水超过36小时，急需抢修。",
+      loc: BRICS_LOCATIONS[7], // Saint Petersburg
+      text: "Глубокие выбоины и трещины асфальта на основных магистралях после зимних заморозков разрушают общественный транспорт.",
+      category: "roads",
+      urgency: 4,
+      summary: "Post-winter road damage, asphalt cracking, and deep potholes disrupting transit buses on main avenues.",
+      lang: "Russian (Русский)",
+    },
+    {
+      loc: BRICS_LOCATIONS[7], // Saint Petersburg
+      text: "Аварийное состояние силового кабеля и искрение распределительного щита в жилом доме старого фонда.",
+      category: "electricity",
+      urgency: 3,
+      summary: "Damaged high-voltage power feed and sparking distribution cabinet in historic residential block.",
+      lang: "Russian (Русский)",
+    },
+
+    // -------------------------------------------------------------
+    // CHINA — Beijing (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[8], // Beijing
+      text: "朝阳区老旧小区主供水管道爆裂，导致三栋居民楼停水超过36小时，急需抢修。",
       category: "water",
       urgency: 5,
-      summary: "Residential water main rupture cutting supply to 3 apartment buildings for over 36 hours.",
+      summary: "Residential water main rupture cutting supply to 3 apartment buildings in Chaoyang for over 36 hours.",
       lang: "Chinese (中文)",
     },
     {
-      loc: BRICS_LOCATIONS[9],
-      text: "商业街地下电力电缆老化频繁短路跳闸，商户无法正常营业。",
+      loc: BRICS_LOCATIONS[8], // Beijing
+      text: "商业步行街地下电力电缆老化频繁短路跳闸，商户冷柜停机造成经济损失。",
       category: "electricity",
       urgency: 4,
       summary: "Aging underground electrical cables tripping power to local commercial street merchants.",
+      lang: "Chinese (中文)",
+    },
+
+    // -------------------------------------------------------------
+    // CHINA — Shanghai (2 items)
+    // -------------------------------------------------------------
+    {
+      loc: BRICS_LOCATIONS[9], // Shanghai
+      text: "浦东新区工业园周边电网负荷过载频繁跳闸，导致多家制造企业车间断电停产。",
+      category: "electricity",
+      urgency: 4,
+      summary: "Power grid overload and repeated transformer trips in Pudong industrial zone stalling manufacturing plants.",
+      lang: "Chinese (中文)",
+    },
+    {
+      loc: BRICS_LOCATIONS[9], // Shanghai
+      text: "暴雨后地铁站接驳干道路面积水严重，下水管网反水导致非机动车道无法通行。",
+      category: "sanitation",
+      urgency: 3,
+      summary: "Severe road waterlogging and drainage backflow near metro transit hub blocking bicycle and pedestrian lanes.",
       lang: "Chinese (中文)",
     },
   ];
@@ -443,7 +561,7 @@ export function generateBricsSubmissions(): Submission[] {
   });
 }
 
-// 60 total combined seed items
+// 70 total combined seed items (50 Indian + 20 BRICS)
 export const ALL_SEED_SUBMISSIONS: Submission[] = [
   ...generateIndianSubmissions(),
   ...generateBricsSubmissions(),
