@@ -23,7 +23,7 @@ non-digitised intake systems with no AI triage layer.
 ## Our Solution
 A scalable Digital Public Good that:
 - Accepts citizen complaints in **any language** via voice, text, or photo
-- Uses **Gemini 2.5 Flash** to classify, translate, and score urgency in real time
+- Uses **Gemini 3.7 Flash** to classify, translate, and score urgency in real time
 - Aggregates into a **geospatial heatmap** showing demand hotspots
 - Generates **AI-ranked priority recommendations** for policymakers
 - Demonstrates **BRICS cross-border applicability** in a dedicated comparison view

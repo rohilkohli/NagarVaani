@@ -8,6 +8,7 @@ import {
   MapPin,
   Flame,
   TrendingUp,
+  CheckCircle2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -19,6 +20,8 @@ import {
 
 interface StatsPanelProps {
   submissions: Submission[];
+  allSubmissions?: Submission[];
+  timeRange?: "today" | "7d" | "30d" | "90d" | "all";
   isLoading?: boolean;
   className?: string;
   showStatCards?: boolean;
@@ -37,6 +40,8 @@ const CATEGORY_META: Record<string, { label: string; color: string; cssVar: stri
 
 export default function StatsPanel({
   submissions = [],
+  allSubmissions,
+  timeRange = "30d",
   isLoading = false,
   className = "",
   showStatCards = true,
@@ -143,6 +148,113 @@ export default function StatsPanel({
     cssVar: "var(--cat-roads)",
   };
 
+  const resolvedCount = useMemo(() => {
+    return submissions.filter((s) => s.status === "resolved").length;
+  }, [submissions]);
+
+  const resolutionRate = useMemo(() => {
+    if (totalCount === 0) return 0;
+    return Math.round((resolvedCount / totalCount) * 100);
+  }, [resolvedCount, totalCount]);
+
+  const resolutionColor =
+    resolutionRate > 50
+      ? "var(--green)"
+      : resolutionRate >= 20
+      ? "var(--amber)"
+      : "var(--red)";
+
+  // PART 2 — Calculate previous equivalent period submissions for dynamic trend comparisons
+  const previousPeriodSubmissions = useMemo(() => {
+    const dataset = allSubmissions && allSubmissions.length > 0 ? allSubmissions : submissions;
+    const now = Date.now();
+
+    let previousStart = now - 60 * 24 * 3600 * 1000;
+    let previousEnd = now - 30 * 24 * 3600 * 1000;
+
+    if (timeRange === "today") {
+      previousStart = now - 48 * 3600 * 1000;
+      previousEnd = now - 24 * 3600 * 1000;
+    } else if (timeRange === "7d") {
+      previousStart = now - 14 * 24 * 3600 * 1000;
+      previousEnd = now - 7 * 24 * 3600 * 1000;
+    } else if (timeRange === "30d") {
+      previousStart = now - 60 * 24 * 3600 * 1000;
+      previousEnd = now - 30 * 24 * 3600 * 1000;
+    } else if (timeRange === "90d") {
+      previousStart = now - 180 * 24 * 3600 * 1000;
+      previousEnd = now - 90 * 24 * 3600 * 1000;
+    } else if (timeRange === "all") {
+      return [];
+    }
+
+    return dataset.filter((s) => {
+      if (!s.created_at) return false;
+      const d = s.created_at instanceof Date ? s.created_at : new Date(s.created_at);
+      const time = d.getTime();
+      if (isNaN(time)) return false;
+      return time >= previousStart && time < previousEnd;
+    });
+  }, [allSubmissions, submissions, timeRange]);
+
+  const calculateDelta = (current: number, previous: number) => {
+    if (timeRange === "all") {
+      return { text: "→ Stable", color: "text-[var(--text-tertiary)]" };
+    }
+    if (previous === 0) {
+      if (current === 0) {
+        return { text: "→ Stable", color: "text-[var(--text-tertiary)]" };
+      }
+      return { text: "↑ +100%", color: "text-[var(--green)]" };
+    }
+    const diff = current - previous;
+    const pct = Math.round((diff / previous) * 100);
+    if (pct > 5) {
+      return { text: `↑ +${pct}%`, color: "text-[var(--green)]" };
+    } else if (pct < -5) {
+      return { text: `↓ ${pct}%`, color: "text-[var(--red)]" };
+    } else {
+      return { text: "→ Stable", color: "text-[var(--text-tertiary)]" };
+    }
+  };
+
+  // 1. Total reports dynamic trend
+  const totalReportsTrend = useMemo(() => {
+    return calculateDelta(submissions.length, previousPeriodSubmissions.length);
+  }, [submissions.length, previousPeriodSubmissions.length, timeRange]);
+
+  // 2. Districts dynamic trend
+  const prevDistrictsCount = useMemo(() => {
+    const set = new Set(previousPeriodSubmissions.map((s) => s.district?.trim()).filter(Boolean));
+    return set.size;
+  }, [previousPeriodSubmissions]);
+
+  const districtsTrend = useMemo(() => {
+    return calculateDelta(uniqueDistricts, prevDistrictsCount);
+  }, [uniqueDistricts, prevDistrictsCount, timeRange]);
+
+  // 3. Avg urgency dynamic trend
+  const prevAvgUrgency = useMemo(() => {
+    if (previousPeriodSubmissions.length === 0) return avgUrgency;
+    const sum = previousPeriodSubmissions.reduce((acc, s) => acc + (Number(s.urgency) || 3), 0);
+    return Number((sum / previousPeriodSubmissions.length).toFixed(1));
+  }, [previousPeriodSubmissions, avgUrgency]);
+
+  const urgencyTrend = useMemo(() => {
+    return calculateDelta(avgUrgency, prevAvgUrgency);
+  }, [avgUrgency, prevAvgUrgency, timeRange]);
+
+  // 4. Resolution rate dynamic trend
+  const prevResolutionRate = useMemo(() => {
+    if (previousPeriodSubmissions.length === 0) return resolutionRate;
+    const resolved = previousPeriodSubmissions.filter((s) => s.status === "resolved").length;
+    return Math.round((resolved / previousPeriodSubmissions.length) * 100);
+  }, [previousPeriodSubmissions, resolutionRate]);
+
+  const resolutionTrend = useMemo(() => {
+    return calculateDelta(resolutionRate, prevResolutionRate);
+  }, [resolutionRate, prevResolutionRate, timeRange]);
+
   // 7-day trend series for recharts
   const trendData = useMemo(() => {
     const days: { dateStr: string; label: string; count: number }[] = [];
@@ -223,10 +335,9 @@ export default function StatsPanel({
                   TOTAL REPORTS
                 </span>
               </div>
-              {/* Trend Indicator */}
-              <span className="text-[12px] font-medium text-[var(--green)] flex items-center gap-0.5">
-                <span>+{countToday || 12} today</span>
-                <span>↑</span>
+              {/* Dynamic Delta Trend Indicator */}
+              <span className={`text-[12px] font-medium font-mono ${totalReportsTrend.color} flex items-center gap-0.5`}>
+                <span>{totalReportsTrend.text}</span>
               </span>
             </div>
 
@@ -263,9 +374,9 @@ export default function StatsPanel({
                   DISTRICTS
                 </span>
               </div>
-              {/* Trend indicator */}
-              <span className="text-[12px] font-medium text-[var(--cat-education)]">
-                across {uniqueStates} states
+              {/* Dynamic Delta Trend indicator */}
+              <span className={`text-[12px] font-medium font-mono ${districtsTrend.color}`}>
+                {districtsTrend.text}
               </span>
             </div>
 
@@ -302,9 +413,9 @@ export default function StatsPanel({
                   AVG URGENCY
                 </span>
               </div>
-              {/* Trend Indicator */}
-              <span className="text-[12px] font-medium text-[var(--text-tertiary)]">
-                → stable
+              {/* Dynamic Delta Trend Indicator */}
+              <span className={`text-[12px] font-medium font-mono ${urgencyTrend.color}`}>
+                {urgencyTrend.text}
               </span>
             </div>
 
@@ -344,48 +455,79 @@ export default function StatsPanel({
             </div>
           </div>
 
-          {/* CARD 4 — Top Category */}
+          {/* CARD 4 — Resolution Rate */}
           <div
             className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-strong)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between group cursor-default hover:-translate-y-[1px] hover:shadow-[0_0_0_1px_rgba(99,102,241,0.1),0_4px_16px_rgba(0,0,0,0.3)]"
             style={{ transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease' }}
           >
-            {/* Top Row: Icon + Label + Trend */}
+            {/* Top Row: Icon + Label + Count */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div
                   className="w-7 h-7 rounded-[var(--radius-sm)] flex items-center justify-center shrink-0"
-                  style={{ background: "rgba(249,115,22,0.1)" }}
+                  style={{ background: "rgba(34,197,94,0.1)" }}
                 >
-                  <TrendingUp className="w-4 h-4 text-[var(--cat-roads)]" />
+                  <CheckCircle2 className="w-4 h-4 text-[var(--green)]" />
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
-                  TOP SECTOR
+                  RESOLUTION RATE
                 </span>
               </div>
-              <span className="text-[12px] font-medium text-[var(--green)]">
-                {topCategory.percentage.toFixed(0)}% share
-              </span>
-            </div>
-
-            {/* Middle: Category Name + Badge */}
-            <div className="my-2.5 flex items-center gap-2">
-              <span className="text-[26px] font-bold tracking-tight text-[var(--text-primary)] leading-none">
-                {topCategory.label}
-              </span>
               <span
-                className="px-2 py-0.5 rounded-[4px] text-[11px] font-bold uppercase tracking-[0.06em]"
-                style={{
-                  background: `rgba(249, 115, 22, 0.15)`,
-                  color: topCategory.color,
-                }}
+                className="text-[12px] font-medium font-mono"
+                style={{ color: resolutionColor }}
               >
-                <span className="font-mono tabular-nums">{topCategory.count}</span> reports
+                {resolvedCount} resolved
               </span>
             </div>
 
-            {/* Bottom: Comparison text */}
+            {/* Middle: Percentage + 48px Circular Progress Indicator */}
+            <div className="my-2 flex items-center justify-between">
+              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none">
+                <span className="font-mono tabular-nums">
+                  <AnimatedNumber value={resolutionRate} duration={1200} />
+                </span>
+                <span className="text-[18px] text-[var(--text-tertiary)] font-normal ml-0.5">%</span>
+              </div>
+
+              {/* 48px Circular Progress SVG */}
+              <div className="relative w-12 h-12 shrink-0 flex items-center justify-center">
+                <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+                  {/* Background Track */}
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="18"
+                    className="stroke-[var(--border-base)]"
+                    strokeWidth="3.5"
+                    fill="none"
+                  />
+                  {/* Progress Arc */}
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="18"
+                    stroke={resolutionColor}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeDasharray={113.1}
+                    strokeDashoffset={113.1 - (Math.min(100, Math.max(0, resolutionRate)) / 100) * 113.1}
+                    fill="none"
+                    style={{ transition: "stroke-dashoffset 800ms ease, stroke 300ms ease" }}
+                  />
+                </svg>
+                {/* Center Percentage */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[10px] font-mono font-bold text-[var(--text-primary)]">
+                    {resolutionRate}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom: Subtitle: "{resolved} of {total} addressed" */}
             <div className="text-[12px] text-[var(--text-secondary)]">
-              Most reported this week
+              {resolvedCount} of {totalCount} addressed
             </div>
           </div>
         </div>

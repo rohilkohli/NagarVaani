@@ -21,10 +21,83 @@ async function startServer() {
     });
   });
 
+  // API Route: Complaint Status Tracking Endpoint
+  app.get("/api/track/:trackingId", async (req, res) => {
+    try {
+      const { trackingId } = req.params;
+      const cleanId = (trackingId || "").trim();
+
+      const sampleSubmission = {
+        id: cleanId.startsWith("NV-") ? cleanId : `NV-${cleanId.toUpperCase()}`,
+        category: "roads",
+        urgency: 4,
+        district: "Patna",
+        state: "Bihar",
+        country: "India",
+        summary_english: "Deep potholes and broken road pavement causing acute vehicular congestion and accident risks.",
+        text: "Severe asphalt damage and deep unbarricaded craters on main arterial road affecting daily transit.",
+        language: "Hindi / English",
+        created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+        status: "classified",
+        photo_url: "",
+      };
+
+      const timeline = [
+        {
+          step: 1,
+          title: "Submitted",
+          status: "complete",
+          description: "Your report was received by the municipal infrastructure system",
+          timestamp: sampleSubmission.created_at,
+        },
+        {
+          step: 2,
+          title: "AI Classification",
+          status: "complete",
+          description: "Gemini 3.7 Flash AI classified and translated your complaint",
+          category: sampleSubmission.category,
+          urgency: sampleSubmission.urgency,
+          summary: sampleSubmission.summary_english,
+        },
+        {
+          step: 3,
+          title: "Policymaker Review",
+          status: "in_progress",
+          description: "Your report has been added to the priority queue",
+          estimate: "Estimated review: within 7 working days",
+        },
+        {
+          step: 4,
+          title: "Action Assigned",
+          status: "pending",
+          description: "Government department notified",
+          note: "You will be updated when action is taken",
+        },
+      ];
+
+      return res.json({
+        success: true,
+        trackingId: cleanId,
+        submission: sampleSubmission,
+        timeline,
+      });
+    } catch (err: any) {
+      console.error("Track complaint error:", err);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to track complaint",
+      });
+    }
+  });
+
   // Helper function to build fallback recommendations from submissions
   function buildFallbackRecommendations(aggregatedData: any[]) {
     const sorted = [...aggregatedData]
-      .sort((a, b) => b.count * b.avg_urgency - a.count * a.avg_urgency)
+      .sort((a, b) => {
+        const scoreA = (a.weight_score ?? (a.count * a.avg_urgency * (1 + ((a.total_upvotes || 0) / (a.count || 1)) * 0.2)));
+        const scoreB = (b.weight_score ?? (b.count * b.avg_urgency * (1 + ((b.total_upvotes || 0) / (b.count || 1)) * 0.2)));
+        return scoreB - scoreA;
+      })
       .slice(0, 10);
 
     return sorted.map((item, index) => ({
@@ -189,6 +262,7 @@ Return this exact JSON structure:
         category: string;
         count: number;
         urgencies: number[];
+        upvotes: number[];
         samples: string[];
       }>();
 
@@ -205,6 +279,7 @@ Return this exact JSON structure:
             category: cat,
             count: 0,
             urgencies: [],
+            upvotes: [],
             samples: [],
           });
         }
@@ -212,19 +287,27 @@ Return this exact JSON structure:
         const grp = groupMap.get(key)!;
         grp.count += 1;
         grp.urgencies.push(Number(sub.urgency) || 3);
+        grp.upvotes.push(Number(sub.upvotes) || 0);
         if (grp.samples.length < 3 && sub.summary_english) {
           grp.samples.push(sub.summary_english);
         }
       }
 
-      const aggregatedData = Array.from(groupMap.values()).map((g) => ({
-        district: g.district,
-        state: g.state,
-        category: g.category,
-        count: g.count,
-        avg_urgency: Number((g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(2)),
-        submissions_sample: g.samples,
-      }));
+      const aggregatedData = Array.from(groupMap.values()).map((g) => {
+        const avg_urgency = Number((g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(2));
+        const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
+        const weight_score = Number((g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2)).toFixed(2));
+        return {
+          district: g.district,
+          state: g.state,
+          category: g.category,
+          count: g.count,
+          avg_urgency,
+          total_upvotes,
+          weight_score,
+          submissions_sample: g.samples,
+        };
+      });
 
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {

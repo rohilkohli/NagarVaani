@@ -3,6 +3,7 @@ export type ComplaintCategory = 'roads' | 'water' | 'electricity' | 'sanitation'
 
 export interface Submission {
   id?: string;
+  firestoreId?: string;
   text: string;
   language: string;
   category: ComplaintCategory;
@@ -15,7 +16,8 @@ export interface Submission {
   lng: number;
   photo_url?: string;
   created_at: Date;
-  status: 'pending' | 'classified' | 'prioritized';
+  status: 'pending' | 'classified' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority';
+  upvotes?: number;
 }
 
 export interface PriorityRecommendation {

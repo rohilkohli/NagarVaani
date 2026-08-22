@@ -109,6 +109,7 @@ export default function PriorityRankingsView({
         category: string;
         count: number;
         urgencies: number[];
+        upvotes: number[];
         countries: Set<string>;
       }
     >();
@@ -124,23 +125,32 @@ export default function PriorityRankingsView({
           category: c,
           count: 0,
           urgencies: [],
+          upvotes: [],
           countries: new Set([s.country || "India"]),
         });
       }
       const g = map.get(key)!;
       g.count += 1;
       g.urgencies.push(Number(s.urgency) || 3);
+      g.upvotes.push(Number(s.upvotes) || 0);
       if (s.country) g.countries.add(s.country);
     }
 
     const sorted = Array.from(map.values())
-      .map((g) => ({
-        ...g,
-        avg_urgency: Number(
+      .map((g) => {
+        const avg_urgency = Number(
           (g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(1)
-        ),
-      }))
-      .sort((a, b) => b.count * b.avg_urgency - a.count * a.avg_urgency)
+        );
+        const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
+        const weight_score = g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2);
+        return {
+          ...g,
+          avg_urgency,
+          total_upvotes,
+          weight_score,
+        };
+      })
+      .sort((a, b) => b.weight_score - a.weight_score)
       .slice(0, 10);
 
     return sorted.map((item, index): PriorityRecommendation => {

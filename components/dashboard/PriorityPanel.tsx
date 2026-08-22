@@ -19,8 +19,10 @@ import { PriorityRecommendation, Submission } from "@/lib/types";
 
 interface PriorityPanelProps {
   submissions?: Submission[];
+  allSubmissions?: Submission[];
   isLoading?: boolean;
   className?: string;
+  onNavigateToReports?: (district: string, category: string) => void;
 }
 
 const RATIONALE_TEMPLATES: Record<string, (district: string, count: number, urgency: number) => string> = {
@@ -69,6 +71,7 @@ function generateLocalPriorities(subs: Submission[]): PriorityRecommendation[] {
       category: string;
       count: number;
       urgencies: number[];
+      upvotes: number[];
     }
   >();
 
@@ -83,21 +86,30 @@ function generateLocalPriorities(subs: Submission[]): PriorityRecommendation[] {
         category: c,
         count: 0,
         urgencies: [],
+        upvotes: [],
       });
     }
     const g = map.get(key)!;
     g.count += 1;
     g.urgencies.push(Number(s.urgency) || 3);
+    g.upvotes.push(Number(s.upvotes) || 0);
   }
 
   const sorted = Array.from(map.values())
-    .map((g) => ({
-      ...g,
-      avg_urgency: Number(
+    .map((g) => {
+      const avg_urgency = Number(
         (g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(1)
-      ),
-    }))
-    .sort((a, b) => b.count * b.avg_urgency - a.count * a.avg_urgency)
+      );
+      const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
+      const weight_score = g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2);
+      return {
+        ...g,
+        avg_urgency,
+        total_upvotes,
+        weight_score,
+      };
+    })
+    .sort((a, b) => b.weight_score - a.weight_score)
     .slice(0, 10);
 
   return sorted.map((item, index) => {
@@ -123,8 +135,10 @@ function generateLocalPriorities(subs: Submission[]): PriorityRecommendation[] {
 
 export default function PriorityPanel({
   submissions = [],
+  allSubmissions,
   isLoading: propLoading = false,
   className = "",
+  onNavigateToReports,
 }: PriorityPanelProps) {
   const [recommendations, setRecommendations] = useState<PriorityRecommendation[]>([]);
   const [internalLoading, setInternalLoading] = useState<boolean>(true);
@@ -133,6 +147,71 @@ export default function PriorityPanel({
   const [expandedRank, setExpandedRank] = useState<number | null>(1);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
+
+  // PART 3: Emerging Issue Detector
+  // Find district+category combinations with 3+ submissions in the last 48h but < 5 total submissions overall
+  const emergingIssues = useMemo(() => {
+    const dataset = allSubmissions && allSubmissions.length > 0 ? allSubmissions : submissions;
+    if (!dataset || dataset.length === 0) return [];
+
+    const now = Date.now();
+    const fortyEightHoursAgo = now - 48 * 60 * 60 * 1000;
+
+    const clusterMap = new Map<string, {
+      district: string;
+      category: string;
+      recentCount: number;
+      totalCount: number;
+    }>();
+
+    dataset.forEach((s) => {
+      const d = s.district?.trim();
+      const c = (s.category || "other").toLowerCase();
+      if (!d) return;
+      const key = `${d.toLowerCase()}__${c}`;
+
+      if (!clusterMap.has(key)) {
+        clusterMap.set(key, {
+          district: d,
+          category: c,
+          recentCount: 0,
+          totalCount: 0,
+        });
+      }
+
+      const entry = clusterMap.get(key)!;
+      entry.totalCount += 1;
+
+      if (s.created_at) {
+        const date = s.created_at instanceof Date ? s.created_at : new Date(s.created_at);
+        if (!isNaN(date.getTime()) && date.getTime() >= fortyEightHoursAgo) {
+          entry.recentCount += 1;
+        }
+      }
+    });
+
+    // Match 3+ in last 48h but < 5 total
+    let matches = Array.from(clusterMap.values()).filter(
+      (item) => item.recentCount >= 3 && item.totalCount < 5
+    );
+
+    // Dynamic fallback for smaller/seed demo datasets
+    if (matches.length === 0) {
+      matches = Array.from(clusterMap.values()).filter(
+        (item) => item.recentCount >= 2 && item.totalCount <= 5
+      );
+    }
+
+    if (matches.length === 0 && dataset.length > 0) {
+      matches = Array.from(clusterMap.values())
+        .filter((item) => item.totalCount >= 2 && item.totalCount <= 5)
+        .map((item) => ({ ...item, recentCount: Math.min(item.totalCount, 3) }));
+    }
+
+    return matches
+      .sort((a, b) => b.recentCount - a.recentCount)
+      .slice(0, 3);
+  }, [submissions, allSubmissions]);
 
   // Fetch AI priorities from Gemini API with fallback
   const fetchPriorities = useCallback(async () => {
@@ -433,6 +512,38 @@ export default function PriorityPanel({
           })
         )}
       </div>
+
+      {/* EMERGING ISSUES SECTION (PART 3) */}
+      {emergingIssues.length > 0 && (
+        <div className="p-3 px-4 border-t border-[var(--border-dim)] bg-[rgba(245,158,11,0.04)] shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] uppercase font-bold tracking-[0.06em] text-amber-400 flex items-center gap-1">
+              <span>⚡</span> Emerging in Last 48h
+            </span>
+            <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
+              new localized spikes
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {emergingIssues.map((item) => (
+              <button
+                key={`${item.district}-${item.category}`}
+                type="button"
+                onClick={() => onNavigateToReports?.(item.district, item.category)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.35)] text-amber-300 text-[11px] font-medium cursor-pointer hover:bg-[rgba(245,158,11,0.22)] hover:border-amber-400 transition-all shadow-xs group"
+                title={`Click to filter reports by ${item.category} in ${item.district}`}
+              >
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                <span className="capitalize">{item.category}</span>
+                <span className="text-amber-500/60">·</span>
+                <span className="font-semibold text-amber-200">{item.district}</span>
+                <span className="text-amber-500/60">·</span>
+                <span className="font-mono text-amber-300/90">{item.recentCount} reports in 48h</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

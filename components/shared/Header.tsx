@@ -10,12 +10,24 @@ import {
   FilePlus2,
 } from "lucide-react";
 
+export type TimeRange = "today" | "7d" | "30d" | "90d" | "all";
+
+export const TIME_RANGE_OPTIONS: { id: TimeRange; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "7d", label: "Last 7 days" },
+  { id: "30d", label: "Last 30 days" },
+  { id: "90d", label: "Last 90 days" },
+  { id: "all", label: "All time" },
+];
+
 interface HeaderProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onExportReport?: () => void;
   isMobileMenuOpen?: boolean;
   onToggleMobileMenu?: () => void;
+  timeRange?: TimeRange;
+  onTimeRangeChange?: (range: TimeRange) => void;
 }
 
 const TAB_TITLES: Record<string, string> = {
@@ -28,17 +40,16 @@ const TAB_TITLES: Record<string, string> = {
   citizen: "Submit Grievance",
 };
 
-const TIMEZONES = ["IST", "UTC", "BRT", "MSK", "SAST", "CST"];
-
 export default function Header({
   activeTab,
   onSelectTab,
   onExportReport,
   isMobileMenuOpen = false,
   onToggleMobileMenu,
+  timeRange = "30d",
+  onTimeRangeChange,
 }: HeaderProps) {
-  const [selectedTz, setSelectedTz] = useState<string>("IST");
-  const [isTzDropdownOpen, setIsTzDropdownOpen] = useState<boolean>(false);
+  const [isRangeDropdownOpen, setIsRangeDropdownOpen] = useState<boolean>(false);
   const [secondsAgo, setSecondsAgo] = useState<number>(3);
 
   const touchStartXRef = useRef<number | null>(null);
@@ -144,35 +155,36 @@ export default function Header({
         </h3>
       </div>
 
-      {/* RIGHT: Timezone selector + Last updated + Export button + Quick Citizen link */}
+      {/* RIGHT: Time range selector + Last updated + Export button + Quick Citizen link */}
       <div className="flex items-center gap-3">
-        {/* Timezone selector (ghost button: "IST ▾") */}
+        {/* Time range selector (ghost button: "Last 30 days ▾") */}
         <div className="relative">
           <button
             type="button"
-            onClick={() => setIsTzDropdownOpen((prev) => !prev)}
-            className="h-7 px-2 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+            onClick={() => setIsRangeDropdownOpen((prev) => !prev)}
+            className="h-7 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
           >
-            <span>{selectedTz}</span>
+            <span>{TIME_RANGE_OPTIONS.find((opt) => opt.id === timeRange)?.label || "Last 30 days"}</span>
             <ChevronDown className="w-3 h-3 text-[var(--text-tertiary)]" />
           </button>
 
-          {isTzDropdownOpen && (
-            <div className="absolute right-0 mt-1 w-24 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] shadow-lg py-1 z-50 animate-in fade-in duration-100">
-              {TIMEZONES.map((tz) => (
+          {isRangeDropdownOpen && (
+            <div className="absolute right-0 mt-1 w-36 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] shadow-lg py-1 z-50 animate-in fade-in duration-100">
+              {TIME_RANGE_OPTIONS.map((opt) => (
                 <button
-                  key={tz}
+                  key={opt.id}
                   onClick={() => {
-                    setSelectedTz(tz);
-                    setIsTzDropdownOpen(false);
+                    onTimeRangeChange?.(opt.id);
+                    setIsRangeDropdownOpen(false);
                   }}
-                  className={`w-full px-2.5 py-1 text-left text-[12px] font-mono hover:bg-[var(--bg-surface)] cursor-pointer ${
-                    selectedTz === tz
-                      ? "text-[var(--brand-secondary)] font-bold"
+                  className={`w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-surface)] cursor-pointer flex items-center justify-between ${
+                    timeRange === opt.id
+                      ? "text-[var(--brand-secondary)] font-semibold bg-[var(--brand-subtle)]/50"
                       : "text-[var(--text-secondary)]"
                   }`}
                 >
-                  {tz}
+                  <span>{opt.label}</span>
+                  {timeRange === opt.id && <span className="text-[10px]">✓</span>}
                 </button>
               ))}
             </div>

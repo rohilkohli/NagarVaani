@@ -76,7 +76,7 @@ export const INITIAL_SUBMISSIONS: Submission[] = [
     lat: 19.0760,
     lng: 72.8777,
     created_at: new Date(Date.now() - 1000 * 60 * 45), // 45 mins ago
-    status: "prioritized"
+    status: "priority"
   },
   {
     id: "sub-102",
@@ -91,7 +91,7 @@ export const INITIAL_SUBMISSIONS: Submission[] = [
     lat: -23.5350,
     lng: -46.5100,
     created_at: new Date(Date.now() - 1000 * 60 * 120),
-    status: "prioritized"
+    status: "priority"
   },
   {
     id: "sub-103",
@@ -151,7 +151,7 @@ export const INITIAL_SUBMISSIONS: Submission[] = [
     lat: 26.8467,
     lng: 80.9462,
     created_at: new Date(Date.now() - 1000 * 60 * 60),
-    status: "prioritized"
+    status: "priority"
   },
   {
     id: "sub-107",
@@ -166,7 +166,7 @@ export const INITIAL_SUBMISSIONS: Submission[] = [
     lat: -22.7556,
     lng: -43.4603,
     created_at: new Date(Date.now() - 1000 * 60 * 700),
-    status: "prioritized"
+    status: "priority"
   },
   {
     id: "sub-108",

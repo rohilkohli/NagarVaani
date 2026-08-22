@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-export type NavTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "citizen" | "priority";
+export type NavTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "citizen" | "priority" | "track";
 
 interface SidebarProps {
   activeTab: NavTab;

@@ -92,7 +92,7 @@ export function generateIndianSubmissions(): Submission[] {
       lat: Number((patnaLoc.lat + latOffset).toFixed(5)),
       lng: Number((patnaLoc.lng + lngOffset).toFixed(5)),
       created_at: getRandomDateInLast30Days(),
-      status: "classified",
+      status: (i % 5 === 0 ? "resolved" : i % 5 === 1 ? "in_progress" : i % 5 === 2 ? "acknowledged" : i % 5 === 3 ? "priority" : "classified"),
     });
   });
 
@@ -130,7 +130,7 @@ export function generateIndianSubmissions(): Submission[] {
       lat: Number((jaipurLoc.lat + latOffset).toFixed(5)),
       lng: Number((jaipurLoc.lng + lngOffset).toFixed(5)),
       created_at: getRandomDateInLast30Days(),
-      status: "prioritized",
+      status: (i % 4 === 0 ? "resolved" : i % 4 === 1 ? "in_progress" : i % 4 === 2 ? "acknowledged" : "priority"),
     });
   });
 
@@ -565,7 +565,10 @@ export function generateBricsSubmissions(): Submission[] {
 export const ALL_SEED_SUBMISSIONS: Submission[] = [
   ...generateIndianSubmissions(),
   ...generateBricsSubmissions(),
-];
+].map((sub, idx) => ({
+  ...sub,
+  upvotes: sub.upvotes ?? ((idx * 7 + 3) % 18 + 1),
+}));
 
 // Seed function for Firestore database
 export async function seedDatabase(db: Firestore): Promise<{ count: number }> {
