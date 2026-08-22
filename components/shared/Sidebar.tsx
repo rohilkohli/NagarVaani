@@ -16,6 +16,7 @@ interface SidebarProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onSeedData?: () => void;
+  onResetDemo?: () => void;
   className?: string;
 }
 
@@ -23,6 +24,7 @@ export default function Sidebar({
   activeTab,
   onSelectTab,
   onSeedData,
+  onResetDemo,
   className = "",
 }: SidebarProps) {
   const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -110,6 +112,19 @@ export default function Sidebar({
           >
             <span>🌱</span>
             <span>Seed Demo Data</span>
+          </button>
+        )}
+
+        {/* Row 3: "🔄 Refresh Demo Data" ghost button (full width) */}
+        {onResetDemo && (
+          <button
+            type="button"
+            onClick={onResetDemo}
+            id="btn-refresh-demo-data"
+            className="w-full h-8 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>🔄</span>
+            <span>Refresh Demo Data</span>
           </button>
         )}
       </div>

@@ -4,9 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import {
-  Layers,
-} from "lucide-react";
+import { Map as MapIcon, Layers, Info } from "lucide-react";
 import { Submission } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -28,6 +26,16 @@ const CATEGORY_FILTERS: { key: string; label: string }[] = [
   { key: "health", label: "Health" },
   { key: "education", label: "Education" },
 ];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  roads: "#ef4444",
+  water: "#38bdf8",
+  electricity: "#fbbf24",
+  sanitation: "#f97316",
+  health: "#ec4899",
+  education: "#a855f7",
+  other: "#94a3b8",
+};
 
 const initialCenter = {
   lat: 20.5937,
@@ -121,6 +129,13 @@ export default function DemandHeatmap({
   const mapRef = useRef<google.maps.Map | null>(null);
   const deckOverlayRef = useRef<GoogleMapsOverlay | null>(null);
 
+  // Check if Maps API key exists
+  const mapsKey =
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+    (typeof window !== "undefined" && ((window as any).__ENV?.VITE_GOOGLE_MAPS_API_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY || (window as any).NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)) ||
+    "";
+  const hasMapsKey = Boolean(mapsKey && mapsKey.length > 10);
+
   useEffect(() => {
     let unsubscribe = () => {};
     try {
@@ -184,14 +199,9 @@ export default function DemandHeatmap({
     );
   }, [realtimeSubmissions, initialSubmissions, categoryFilter]);
 
-  const apiKey =
-    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-    (typeof window !== "undefined" && (window as any).NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) ||
-    "";
-
   const { isLoaded } = useJsApiLoader({
     id: "nagarvaani-google-maps-script",
-    googleMapsApiKey: apiKey,
+    googleMapsApiKey: hasMapsKey ? mapsKey : "",
   });
 
   const updateDeckOverlay = useCallback(() => {
@@ -215,8 +225,10 @@ export default function DemandHeatmap({
   }, [filteredSubmissions]);
 
   useEffect(() => {
-    updateDeckOverlay();
-  }, [updateDeckOverlay]);
+    if (hasMapsKey && isLoaded) {
+      updateDeckOverlay();
+    }
+  }, [updateDeckOverlay, hasMapsKey, isLoaded]);
 
   const onMapLoad = useCallback(
     (map: google.maps.Map) => {
@@ -233,6 +245,73 @@ export default function DemandHeatmap({
     [updateDeckOverlay]
   );
 
+  // Group submissions by lat/lng quadrant into a 10×10 grid of cells for no-key fallback
+  const gridCells = useMemo(() => {
+    const source = filteredSubmissions.length > 0 ? filteredSubmissions : initialSubmissions;
+    const grid: {
+      count: number;
+      categoryCounts: Record<string, number>;
+      dominantCategory: string;
+      dominantColor: string;
+      districts: Set<string>;
+    }[][] = Array.from({ length: 10 }, () =>
+      Array.from({ length: 10 }, () => ({
+        count: 0,
+        categoryCounts: {},
+        dominantCategory: "roads",
+        dominantColor: "#ef4444",
+        districts: new Set<string>(),
+      }))
+    );
+
+    const lats = source.map((s) => s.lat).filter((n): n is number => typeof n === "number" && !isNaN(n));
+    const lngs = source.map((s) => s.lng).filter((n): n is number => typeof n === "number" && !isNaN(n));
+    const minLat = lats.length ? Math.min(...lats) : 8;
+    const maxLat = lats.length ? Math.max(...lats) : 37;
+    const minLng = lngs.length ? Math.min(...lngs) : 68;
+    const maxLng = lngs.length ? Math.max(...lngs) : 97;
+
+    const latSpan = maxLat - minLat || 1;
+    const lngSpan = maxLng - minLng || 1;
+
+    source.forEach((s) => {
+      const sLat = typeof s.lat === "number" ? s.lat : 20.5937;
+      const sLng = typeof s.lng === "number" ? s.lng : 78.9629;
+      const latNorm = Math.min(9, Math.max(0, Math.floor(((sLat - minLat) / latSpan) * 9.99)));
+      const lngNorm = Math.min(9, Math.max(0, Math.floor(((sLng - minLng) / lngSpan) * 9.99)));
+      const row = 9 - latNorm; // Row 0 is top (maxLat), Row 9 is bottom (minLat)
+      const col = lngNorm;
+
+      const cell = grid[row][col];
+      cell.count += 1;
+      const cat = (s.category || "other").toLowerCase();
+      cell.categoryCounts[cat] = (cell.categoryCounts[cat] || 0) + 1;
+      if (s.district) {
+        cell.districts.add(s.district);
+      }
+    });
+
+    for (let r = 0; r < 10; r++) {
+      for (let c = 0; c < 10; c++) {
+        const cell = grid[r][c];
+        if (cell.count > 0) {
+          let maxCount = 0;
+          let topCat = "roads";
+          Object.entries(cell.categoryCounts).forEach(([cat, cnt]) => {
+            if (cnt > maxCount) {
+              maxCount = cnt;
+              topCat = cat;
+            }
+          });
+          cell.dominantCategory = topCat;
+          cell.dominantColor = CATEGORY_COLORS[topCat] || "#6366f1";
+        }
+      }
+    }
+
+    return grid;
+  }, [filteredSubmissions, initialSubmissions]);
+
   return (
     <div
       className={`bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] overflow-hidden flex flex-col p-0 card-hover-lift hover:border-[var(--border-base)] ${className}`}
@@ -240,11 +319,14 @@ export default function DemandHeatmap({
     >
       {/* HEADER BAR (Inside Card, 44px height, padding: 12px 16px) */}
       <div className="h-[44px] min-h-[44px] px-4 flex items-center justify-between border-b border-[var(--border-dim)] bg-[var(--bg-surface)] shrink-0">
-        <h3 className="text-[15px] font-semibold text-[var(--text-primary)] tracking-tight">
-          Demand Heatmap
-        </h3>
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-[var(--brand-secondary)]" />
+          <h3 className="text-[15px] font-semibold text-[var(--text-primary)] tracking-tight">
+            Demand Heatmap
+          </h3>
+        </div>
 
-        {/* Filter Pills (24px height, 8px horizontal padding, 6px gap) */}
+        {/* Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
           {CATEGORY_FILTERS.map((cat) => {
             const isActive = categoryFilter === cat.key;
@@ -266,115 +348,126 @@ export default function DemandHeatmap({
         </div>
       </div>
 
-      {/* MAP ITSELF (Height: 420px, border-radius: 0 0 14px 14px, entrance fade-in) */}
-      <div className="relative w-full h-[420px] bg-[var(--bg-base)] overflow-hidden rounded-b-[14px] heatmap-enter">
-        {/* Loading skeleton exact container shape */}
-        {isLoading && initialSubmissions.length === 0 ? (
-          <div className="w-full h-full skeleton-shimmer" />
-        ) : isLoaded && apiKey ? (
-          <GoogleMap
-            mapContainerStyle={{ width: "100%", height: "420px" }}
-            center={initialCenter}
-            zoom={initialZoom}
-            options={{
-              styles: DARK_MAP_STYLES,
-              disableDefaultUI: false,
-              zoomControl: true,
-              streetViewControl: false,
-              mapTypeControl: false,
-              fullscreenControl: false,
-            }}
-            onLoad={onMapLoad}
-          />
-        ) : (
-          /* High-Fidelity Canvas Vector Heatmap Layer */
-          <div className="relative w-full h-full bg-[var(--bg-base)] flex flex-col items-center justify-center p-4 select-none">
-            {/* World Vector Blueprint */}
-            <svg
-              className="absolute inset-0 w-full h-full opacity-60"
-              viewBox="0 0 1000 420"
-              preserveAspectRatio="xMidYMid slice"
-            >
-              <defs>
-                <pattern
-                  id="grid-dots"
-                  x="0"
-                  y="0"
-                  width="20"
-                  height="20"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.06)" />
-                </pattern>
-                <radialGradient id="heat-india" cx="55%" cy="48%" r="18%">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity="0.8" />
-                  <stop offset="35%" stopColor="#f97316" stopOpacity="0.5" />
-                  <stop offset="70%" stopColor="#fbbf24" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="heat-brazil" cx="28%" cy="65%" r="14%">
-                  <stop offset="0%" stopColor="#f97316" stopOpacity="0.75" />
-                  <stop offset="50%" stopColor="#fbbf24" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="heat-safrica" cx="48%" cy="75%" r="12%">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity="0.7" />
-                  <stop offset="60%" stopColor="#fbbf24" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="heat-china" cx="68%" cy="42%" r="15%">
-                  <stop offset="0%" stopColor="#f97316" stopOpacity="0.7" />
-                  <stop offset="60%" stopColor="#6366f1" stopOpacity="0.2" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="heat-russia" cx="62%" cy="25%" r="16%">
-                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.6" />
-                  <stop offset="60%" stopColor="#6366f1" stopOpacity="0.2" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </radialGradient>
-              </defs>
-
-              {/* Grid Background */}
-              <rect width="1000" height="420" fill="url(#grid-dots)" />
-
-              {/* Heat Density Overlays */}
-              <circle cx="550" cy="200" r="160" fill="url(#heat-india)" />
-              <circle cx="280" cy="270" r="130" fill="url(#heat-brazil)" />
-              <circle cx="480" cy="315" r="110" fill="url(#heat-safrica)" />
-              <circle cx="680" cy="175" r="140" fill="url(#heat-china)" />
-              <circle cx="620" cy="105" r="140" fill="url(#heat-russia)" />
-            </svg>
-
-            {/* Pulsing Coordinates Nodes */}
-            <div className="absolute top-[48%] left-[55%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-              <div className="w-4 h-4 rounded-full bg-[var(--red)] ring-4 ring-[var(--red)]/20 animate-ping" />
-              <span className="mt-1 px-1.5 py-0.5 rounded-[4px] bg-[var(--bg-elevated)]/90 border border-[var(--border-base)] text-[10px] font-mono text-white">
-                India (High Triage)
-              </span>
+      {/* MAP / FALLBACK CONTAINER */}
+      {hasMapsKey && isLoaded ? (
+        <div className="relative w-full h-[456px] bg-[var(--bg-base)] overflow-hidden rounded-b-[var(--radius-md)] heatmap-enter">
+          {isLoading && initialSubmissions.length === 0 ? (
+            <div className="w-full h-full skeleton-shimmer" />
+          ) : (
+            <GoogleMap
+              mapContainerStyle={{ width: "100%", height: "456px" }}
+              center={initialCenter}
+              zoom={initialZoom}
+              options={{
+                styles: DARK_MAP_STYLES,
+                disableDefaultUI: false,
+                zoomControl: true,
+                streetViewControl: false,
+                mapTypeControl: false,
+                fullscreenControl: false,
+              }}
+              onLoad={onMapLoad}
+            />
+          )}
+        </div>
+      ) : (
+        /* STEP 2: STYLED 500PX FALLBACK WHEN NO MAPS KEY */
+        <div
+          className="relative w-full min-h-[500px] h-[500px] flex flex-col justify-between p-6 select-none overflow-hidden"
+          style={{
+            background: "linear-gradient(135deg, var(--bg-surface), var(--bg-elevated))",
+            border: "1px solid var(--border-base)",
+            borderRadius: "var(--radius-lg)",
+          }}
+        >
+          {/* Header info in center top */}
+          <div className="flex flex-col items-center text-center space-y-1.5 z-10">
+            <div className="w-12 h-12 rounded-full bg-[var(--bg-base)] border border-[var(--border-base)] flex items-center justify-center shadow-inner mb-1">
+              <MapIcon className="w-6 h-6 text-[var(--text-tertiary)]" style={{ width: 40, height: 40 }} />
             </div>
+            <h3 className="text-[17px] font-semibold text-[var(--text-primary)] tracking-tight">
+              Demand Heatmap
+            </h3>
+            <p className="text-[13px] text-[var(--text-tertiary)] max-w-md font-normal">
+              Add <code className="px-1.5 py-0.5 rounded-[4px] bg-[var(--bg-base)] border border-[var(--border-dim)] text-[var(--brand-secondary)] font-mono text-[12px]">VITE_GOOGLE_MAPS_API_KEY</code> to enable the live map
+            </p>
+          </div>
 
-            <div className="absolute top-[65%] left-[28%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-              <div className="w-3.5 h-3.5 rounded-full bg-[var(--amber)] ring-4 ring-[var(--amber)]/20 animate-pulse" />
-              <span className="mt-1 px-1.5 py-0.5 rounded-[4px] bg-[var(--bg-elevated)]/90 border border-[var(--border-base)] text-[10px] font-mono text-white">
-                Brazil
-              </span>
-            </div>
+          {/* 10x10 Dot Grid Visualizer */}
+          <div className="my-auto py-2 flex flex-col items-center justify-center z-10">
+            <div className="p-4 rounded-[var(--radius-md)] bg-[var(--bg-base)]/80 border border-[var(--border-dim)] backdrop-blur-xs shadow-lg">
+              <div className="grid grid-cols-10 gap-2.5 sm:gap-3.5">
+                {gridCells.map((row, rIdx) =>
+                  row.map((cell, cIdx) => {
+                    const hasData = cell.count > 0;
+                    const sizePx = hasData
+                      ? Math.min(22, Math.max(8, 7 + cell.count * 2.5))
+                      : 4;
 
-            <div className="absolute top-[75%] left-[48%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-              <div className="w-3.5 h-3.5 rounded-full bg-[var(--red)] ring-4 ring-[var(--red)]/20 animate-pulse" />
-              <span className="mt-1 px-1.5 py-0.5 rounded-[4px] bg-[var(--bg-elevated)]/90 border border-[var(--border-base)] text-[10px] font-mono text-white">
-                S. Africa
-              </span>
-            </div>
+                    return (
+                      <div
+                        key={`cell-${rIdx}-${cIdx}`}
+                        className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center relative group"
+                      >
+                        <div
+                          className={`rounded-full transition-all duration-200 ${
+                            hasData ? "shadow-xs group-hover:scale-125" : "bg-white/10"
+                          }`}
+                          style={{
+                            width: `${sizePx}px`,
+                            height: `${sizePx}px`,
+                            backgroundColor: hasData ? cell.dominantColor : "rgba(255, 255, 255, 0.08)",
+                            boxShadow: hasData
+                              ? `0 0 10px ${cell.dominantColor}55`
+                              : undefined,
+                          }}
+                        />
 
-            {/* Bottom Status Pill */}
-            <div className="absolute bottom-3 left-3 z-10 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)]/90 border border-[var(--border-base)] text-[11px] font-mono text-[var(--text-secondary)] backdrop-blur-xs flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] live-pulse" />
-              <span>{filteredSubmissions.length} Geospatial Vector Coordinates</span>
+                        {/* Interactive Tooltip on Hover */}
+                        {hasData && (
+                          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-30 px-2 py-1 rounded-[4px] bg-[var(--bg-elevated)] border border-[var(--border-base)] shadow-md whitespace-nowrap text-[10px] text-[var(--text-primary)]">
+                            <span className="font-semibold capitalize text-white">
+                              {cell.dominantCategory}
+                            </span>
+                            : {cell.count} report{cell.count > 1 ? "s" : ""}
+                            {cell.districts.size > 0 && (
+                              <span className="text-[var(--text-tertiary)] block text-[9px]">
+                                {Array.from(cell.districts).slice(0, 2).join(", ")}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Bottom Footnote & Category Dot Legend */}
+          <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--text-tertiary)] pt-2 border-t border-[var(--border-dim)] z-10">
+            <div className="flex items-center gap-1.5 font-mono">
+              <Info className="w-3.5 h-3.5 text-[var(--brand-secondary)]" />
+              <span>{filteredSubmissions.length} Geospatial Telemetry Points in Grid</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {Object.entries(CATEGORY_COLORS).slice(0, 5).map(([cat, color]) => (
+                <div key={cat} className="flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="capitalize text-[11px] text-[var(--text-secondary)]">
+                    {cat}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

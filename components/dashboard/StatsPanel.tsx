@@ -206,7 +206,10 @@ export default function StatsPanel({
       {showStatCards && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* CARD 1 — Total Reports */}
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between card-hover-lift hover:border-[var(--border-base)]">
+          <div
+            className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-strong)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between group cursor-default hover:-translate-y-[1px] hover:shadow-[0_0_0_1px_rgba(99,102,241,0.2),0_0_20px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.3)]"
+            style={{ transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease' }}
+          >
             {/* Top Row: Icon + Label + Trend */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -229,8 +232,10 @@ export default function StatsPanel({
 
             {/* Middle: Giant Number */}
             <div className="my-2.5">
-              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none font-mono">
-                <AnimatedNumber value={totalCount} duration={1200} />
+              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none">
+                <span className="font-mono tabular-nums">
+                  <AnimatedNumber value={totalCount} duration={1200} />
+                </span>
               </div>
             </div>
 
@@ -241,7 +246,10 @@ export default function StatsPanel({
           </div>
 
           {/* CARD 2 — Districts */}
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between card-hover-lift hover:border-[var(--border-base)]">
+          <div
+            className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-strong)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between group cursor-default hover:-translate-y-[1px] hover:shadow-[0_0_0_1px_rgba(99,102,241,0.1),0_4px_16px_rgba(0,0,0,0.3)]"
+            style={{ transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease' }}
+          >
             {/* Top Row: Icon + Label + Trend */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -263,8 +271,10 @@ export default function StatsPanel({
 
             {/* Middle: Giant Number */}
             <div className="my-2.5">
-              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none font-mono">
-                <AnimatedNumber value={uniqueDistricts || 28} duration={1200} />
+              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none">
+                <span className="font-mono tabular-nums">
+                  <AnimatedNumber value={uniqueDistricts || 28} duration={1200} />
+                </span>
               </div>
             </div>
 
@@ -275,7 +285,10 @@ export default function StatsPanel({
           </div>
 
           {/* CARD 3 — Avg Urgency */}
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between card-hover-lift hover:border-[var(--border-base)]">
+          <div
+            className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-strong)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between group cursor-default hover:-translate-y-[1px] hover:shadow-[0_0_0_1px_rgba(99,102,241,0.1),0_4px_16px_rgba(0,0,0,0.3)]"
+            style={{ transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease' }}
+          >
             {/* Top Row: Icon + Label + Trend */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -297,9 +310,11 @@ export default function StatsPanel({
 
             {/* Middle: Giant Number & Urgency Dots */}
             <div className="my-2.5 flex items-baseline justify-between">
-              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none font-mono">
-                {avgUrgency || "3.4"}
-                <span className="text-[16px] text-[var(--text-tertiary)] font-normal">/5</span>
+              <div className="text-[32px] font-bold tracking-tight text-[var(--text-primary)] leading-none">
+                <span className="font-mono tabular-nums">
+                  {avgUrgency || "3.4"}
+                </span>
+                <span className="text-[16px] text-[var(--text-tertiary)] font-normal ml-0.5">/5</span>
               </div>
               {/* 5 small circles (urgency dots), filled to score */}
               <div className="flex items-center gap-1">
@@ -330,7 +345,10 @@ export default function StatsPanel({
           </div>
 
           {/* CARD 4 — Top Category */}
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between card-hover-lift hover:border-[var(--border-base)]">
+          <div
+            className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-strong)] rounded-[var(--radius-md)] p-4 flex flex-col justify-between group cursor-default hover:-translate-y-[1px] hover:shadow-[0_0_0_1px_rgba(99,102,241,0.1),0_4px_16px_rgba(0,0,0,0.3)]"
+            style={{ transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease' }}
+          >
             {/* Top Row: Icon + Label + Trend */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -361,7 +379,7 @@ export default function StatsPanel({
                   color: topCategory.color,
                 }}
               >
-                {topCategory.count} reports
+                <span className="font-mono tabular-nums">{topCategory.count}</span> reports
               </span>
             </div>
 

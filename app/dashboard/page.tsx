@@ -8,6 +8,7 @@ import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import StatsPanel from "@/components/dashboard/StatsPanel";
 import DemandHeatmap from "@/components/dashboard/DemandHeatmap";
 import PriorityPanel from "@/components/dashboard/PriorityPanel";
+import PriorityRankingsView from "@/components/dashboard/PriorityRankingsView";
 import BRICSComparison from "@/components/dashboard/BRICSComparison";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +17,9 @@ import {
   X,
   Database,
   Cpu,
+  RefreshCw,
+  Radio,
+  PauseCircle,
 } from "lucide-react";
 
 export type DashboardTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "priority";
@@ -46,6 +50,29 @@ export default function DashboardPage({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Auto-refresh control for Firestore listener
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("nv_auto_refresh");
+      return saved !== "false";
+    }
+    return true;
+  });
+
+  const handleToggleAutoRefresh = () => {
+    const nextState = !autoRefresh;
+    setAutoRefresh(nextState);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nv_auto_refresh", String(nextState));
+    }
+    setToastMessage(
+      nextState
+        ? "Auto-Refresh enabled: Live Firestore listener connected."
+        : "Auto-Refresh paused: Live data listener disconnected."
+    );
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   // Table filtering & pagination
   const [tableSearch, setTableSearch] = useState<string>("");
   const [tableCategory, setTableCategory] = useState<string>("all");
@@ -53,10 +80,15 @@ export default function DashboardPage({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const itemsPerPage = 15;
 
-  // 1. REAL-TIME FIRESTORE DATA INTAKE
+  // 1. REAL-TIME FIRESTORE DATA INTAKE (Active when autoRefresh is true)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
+
+    if (!autoRefresh) {
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const q = collection(db, "submissions");
@@ -110,7 +142,7 @@ export default function DashboardPage({
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [autoRefresh]);
 
   // Seed demo data handler
   const handleSeedDemoData = async () => {
@@ -238,7 +270,17 @@ export default function DashboardPage({
       )}
 
       {/* ========================================================================= */}
-      {/* 3. BRICS VIEW TAB */}
+      {/* 3. AI PRIORITIES TAB (EXECUTIVE INTELLIGENCE VIEW) */}
+      {/* ========================================================================= */}
+      {activeTab === "priority" && (
+        <PriorityRankingsView
+          submissions={submissions}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. BRICS VIEW TAB */}
       {/* ========================================================================= */}
       {activeTab === "brics" && (
         <div className="space-y-4">
@@ -487,11 +529,77 @@ export default function DashboardPage({
                   </span>
                 </div>
                 <div className="text-[12px] text-[var(--text-secondary)] font-mono">
-                  Firebase Firestore (Realtime)
+                  Firebase Firestore ({autoRefresh ? "Realtime Stream" : "Paused Snapshot"})
                 </div>
-                <span className="inline-block text-[11px] font-semibold text-[var(--green)] bg-[rgba(16,185,129,0.1)] px-2 py-0.5 rounded-[3px]">
-                  Connected • Live Stream
+                {autoRefresh ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--green)] bg-[rgba(16,185,129,0.1)] px-2 py-0.5 rounded-[3px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />
+                    Connected • Live Stream
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--amber)] bg-[rgba(245,158,11,0.1)] px-2 py-0.5 rounded-[3px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--amber)]" />
+                    Paused • Manual Snapshot Mode
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* AUTO-REFRESH FIRESTORE LISTENER TOGGLE SWITCH */}
+            <div className="p-4 rounded-[var(--radius-md)] bg-[var(--bg-elevated)]/60 border border-[var(--border-base)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  {autoRefresh ? (
+                    <Radio className="w-4 h-4 text-[var(--green)] animate-pulse shrink-0" />
+                  ) : (
+                    <PauseCircle className="w-4 h-4 text-[var(--amber)] shrink-0" />
+                  )}
+                  <span className="text-[14px] font-semibold text-[var(--text-primary)]">
+                    Firestore Auto-Refresh & Live Telemetry
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] uppercase font-mono px-1.5 py-0 ${
+                      autoRefresh
+                        ? "border-[var(--green)] text-[var(--green)]"
+                        : "border-[var(--amber)] text-[var(--amber)]"
+                    }`}
+                  >
+                    {autoRefresh ? "Live Active" : "Paused"}
+                  </Badge>
+                </div>
+                <p className="text-[12px] text-[var(--text-secondary)] max-w-xl">
+                  Enables real-time websocket snapshot listener for civic submissions. Disable to pause live UI re-renders and freeze data during analysis or policymaker review sessions.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-[12px] font-mono text-[var(--text-tertiary)]">
+                  {autoRefresh ? "Enabled" : "Disabled"}
                 </span>
+
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoRefresh}
+                  onClick={handleToggleAutoRefresh}
+                  id="toggle-firestore-auto-refresh"
+                  className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 focus:outline-none ${
+                    autoRefresh
+                      ? "bg-[var(--brand-primary)] justify-end"
+                      : "bg-[var(--bg-surface)] border border-[var(--border-strong)] justify-start"
+                  }`}
+                  aria-label="Toggle Firestore Auto-Refresh"
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full transition-transform duration-200 ${
+                      autoRefresh
+                        ? "bg-white shadow-xs"
+                        : "bg-[var(--text-tertiary)]"
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 

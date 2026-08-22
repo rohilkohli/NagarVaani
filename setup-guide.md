@@ -22,12 +22,12 @@ NagarVaani is an AI-powered municipal intelligence platform for citizen grievanc
 3. Copy the Firebase configuration parameters.
 4. Duplicate `.env.example` to `.env.local` (or edit existing `.env.local`) and set:
    ```env
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
+   VITE_FIREBASE_API_KEY=your_firebase_api_key
+   VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your_project_id
+   VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+   VITE_FIREBASE_APP_ID=your_firebase_app_id
    ```
 
 ### Step 4: Obtain Google Gemini API Key
@@ -38,7 +38,7 @@ NagarVaani is an AI-powered municipal intelligence platform for citizen grievanc
    GEMINI_API_KEY=your_gemini_api_key
    ```
 
-### Step 5: Enable Google Maps API
+### Step 5: Enable Google Maps API (Optional)
 1. Go to [Google Cloud Console](https://console.cloud.google.com/).
 2. Select your Google Cloud project and open **APIs & Services → Library**.
 3. Search for and enable:
@@ -46,8 +46,9 @@ NagarVaani is an AI-powered municipal intelligence platform for citizen grievanc
    - **Geocoding API**
 4. Generate an API key under **APIs & Services → Credentials** and add it to `.env.local`:
    ```env
-   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+   VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
    ```
+*(Note: If no Google Maps API key is provided, NagarVaani automatically displays an interactive 2D geospatial quadrant dot grid visualizer).*
 
 ### Step 6: Install Dependencies & Run Development Server
 In your terminal, execute:
@@ -59,12 +60,12 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Step 7: Seed Initial Demo Data
 1. Navigate to the Policy Dashboard at [http://localhost:3000/dashboard](http://localhost:3000/dashboard).
-2. Click the **"🌱 Seed Demo Data"** button in the dark navy navigation bar.
+2. Click the **"🌱 Seed Demo Data"** or **"🔄 Refresh Demo Data"** button in the sidebar.
 3. 50+ rich civic complaint records across India, Brazil, Russia, South Africa, and China will be seeded into Firestore.
 
 ### Step 8: Explore the Populated Dashboard
 - **📊 Overview Tab:** Key stats summary, cluster urgency telemetry, geospatial heatmap with 50km radius analyzer, and Gemini-ranked municipal budget allocations.
-- **🗺️ Heatmap Tab:** Full-screen 650px Deck.gl density visualization with domain sector filters (Roads, Water, Electricity, Sanitation, Health).
+- **🗺️ Heatmap Tab:** Full-screen density visualization with domain sector filters (Roads, Water, Electricity, Sanitation, Health) and interactive quadrant data mapping.
 - **🌍 BRICS View Tab:** Cross-border comparative matrix showcasing identical civic problem categories side-by-side with 7-day sparklines and cross-border insights.
 - **📋 All Reports Tab:** Filterable, searchable, sortable registry of all complaints with audio transcripts and AI summaries.
 

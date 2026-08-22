@@ -55,9 +55,22 @@ export default function App() {
           status: item.status,
         });
       }
-      alert("🌱 Successfully seeded BRICS demo data!");
     } catch (e) {
-      alert("🌱 Seeded demo records into local state!");
+      console.warn("Firestore seed notice (falling back to memory state):", e);
+    }
+  };
+
+  const handleResetDemo = async () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem('nv_seeded');
+      }
+      await handleSeedData();
+      if (typeof window !== "undefined") {
+        localStorage.setItem('nv_seeded', 'true');
+      }
+    } catch (e) {
+      console.error("Error refreshing demo data:", e);
     }
   };
 
@@ -77,30 +90,112 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // FIX 1 — Auto-seed on first dashboard load
+  useEffect(() => {
+    const hasSeeded = localStorage.getItem('nv_seeded');
+    if (!hasSeeded) {
+      handleSeedData().then(() => {
+        localStorage.setItem('nv_seeded', 'true');
+      });
+    }
+  }, []);
+
+  // FIX 1 — Smooth body background transition between citizen portal and dashboard
+  useEffect(() => {
+    if (activeTab === 'citizen') {
+      document.body.style.backgroundColor = '#fafaf9';
+    } else {
+      document.body.style.backgroundColor = '#0a0a0f';
+    }
+  }, [activeTab]);
+
+  // Touch gesture handling for mobile drawer (swipe from left edge to open, swipe to close)
+  useEffect(() => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length === 0) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+
+      // Ensure horizontal swipe intent
+      if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+        // Swipe right from left edge (within first 40px of screen) to open drawer
+        if (deltaX > 0 && touchStartX <= 40 && !isMobileMenuOpen) {
+          setIsMobileMenuOpen(true);
+        }
+        // Swipe on drawer to close (supports both left swipe or right swipe gesture)
+        else if (isMobileMenuOpen) {
+          if (deltaX < -30 || deltaX > 30) {
+            setIsMobileMenuOpen(false);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [isMobileMenuOpen]);
+
   // 1. CITIZEN PORTAL (Full-width single column, no sidebar, warm light aesthetic)
   if (activeTab === "citizen") {
     return (
-      <CitizenPage
-        onNavigateToDashboard={() => handleSelectTab("overview")}
-      />
+      <div className="transition-colors duration-300 min-h-screen">
+        <CitizenPage
+          onNavigateToDashboard={() => handleSelectTab("overview")}
+        />
+      </div>
     );
   }
 
   // 2. POLICYMAKER DASHBOARD (Dark-first Linear bento grid layout with 220px fixed sidebar)
   return (
-    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] flex font-sans antialiased selection:bg-[rgba(99,102,241,0.25)] selection:text-white">
+    <div className="transition-colors duration-300 min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] flex font-sans antialiased selection:bg-[rgba(99,102,241,0.25)] selection:text-white">
       {/* DESKTOP FIXED LEFT SIDEBAR (220px) */}
       <div className="hidden md:block w-[220px] shrink-0">
         <Sidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
           onSeedData={handleSeedData}
+          onResetDemo={handleResetDemo}
         />
       </div>
 
       {/* MOBILE DRAWER SIDEBAR */}
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+        <div
+          className="md:hidden fixed inset-0 z-50 flex"
+          onTouchStart={(e) => {
+            (e.currentTarget as any)._touchStartX = e.touches[0].clientX;
+            (e.currentTarget as any)._touchStartY = e.touches[0].clientY;
+          }}
+          onTouchEnd={(e) => {
+            const startX = (e.currentTarget as any)._touchStartX;
+            const startY = (e.currentTarget as any)._touchStartY;
+            if (typeof startX === 'number' && typeof startY === 'number') {
+              const deltaX = e.changedTouches[0].clientX - startX;
+              const deltaY = e.changedTouches[0].clientY - startY;
+              if (deltaX < -40 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                setIsMobileMenuOpen(false);
+              }
+            }
+          }}
+        >
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-xs"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -110,13 +205,14 @@ export default function App() {
               activeTab={activeTab}
               onSelectTab={handleSelectTab}
               onSeedData={handleSeedData}
+              onResetDemo={handleResetDemo}
             />
           </div>
         </div>
       )}
 
-      {/* MAIN CONTENT WORKSPACE (Offset by 220px on desktop) */}
-      <div className="flex-1 flex flex-col min-w-0 md:pl-[220px]">
+      {/* MAIN CONTENT WORKSPACE */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* PERSISTENT TOP HEADER */}
         <Header
           activeTab={activeTab}
@@ -125,8 +221,11 @@ export default function App() {
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
-        {/* MAIN BODY CONTAINER */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        {/* MAIN BODY CONTAINER WITH KEY TO TRIGGER PAGE TRANSITION */}
+        <main
+          key={activeTab}
+          className="page-transition-enter flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto"
+        >
           <DashboardPage
             activeTab={activeTab as any}
             onSelectTab={handleSelectTab}
@@ -142,7 +241,7 @@ export default function App() {
               <span>Multilingual AI Infrastructure Intelligence for BRICS Nations</span>
             </div>
             <div className="font-mono text-[11px] text-[var(--text-tertiary)]">
-              Gemini 3.7 Flash Engine
+              Gemini 2.5 Flash · Google AI
             </div>
           </div>
         </footer>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NavTab } from "./Sidebar";
 import {
   Download,
@@ -41,6 +41,9 @@ export default function Header({
   const [isTzDropdownOpen, setIsTzDropdownOpen] = useState<boolean>(false);
   const [secondsAgo, setSecondsAgo] = useState<number>(3);
 
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setSecondsAgo((prev) => (prev >= 30 ? 1 : prev + 1));
@@ -48,20 +51,88 @@ export default function Header({
     return () => clearInterval(timer);
   }, []);
 
+  // Global edge-swipe detection on mobile viewport
+  useEffect(() => {
+    if (!onToggleMobileMenu) return;
+
+    const handleGlobalTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        touchStartXRef.current = e.touches[0].clientX;
+        touchStartYRef.current = e.touches[0].clientY;
+      }
+    };
+
+    const handleGlobalTouchEnd = (e: TouchEvent) => {
+      if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const deltaX = endX - touchStartXRef.current;
+      const deltaY = endY - touchStartYRef.current;
+
+      const isHorizontalSwipe = Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
+
+      if (isHorizontalSwipe) {
+        // Swipe right to open drawer (especially from left edge or header)
+        if (deltaX > 0 && !isMobileMenuOpen && (touchStartXRef.current < 40 || touchStartYRef.current < 60)) {
+          onToggleMobileMenu();
+        }
+        // Swipe left to close drawer
+        else if (deltaX < 0 && isMobileMenuOpen) {
+          onToggleMobileMenu();
+        }
+      }
+
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+    };
+
+    window.addEventListener("touchstart", handleGlobalTouchStart, { passive: true });
+    window.addEventListener("touchend", handleGlobalTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener("touchstart", handleGlobalTouchStart);
+      window.removeEventListener("touchend", handleGlobalTouchEnd);
+    };
+  }, [isMobileMenuOpen, onToggleMobileMenu]);
+
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleHeaderTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null || !onToggleMobileMenu) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+
+    if (Math.abs(deltaX) > 35 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      if (deltaX > 0 && !isMobileMenuOpen) {
+        onToggleMobileMenu();
+      } else if (deltaX < 0 && isMobileMenuOpen) {
+        onToggleMobileMenu();
+      }
+    }
+
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+  };
+
   const sectionTitle = TAB_TITLES[activeTab] || "Executive Overview";
 
   return (
     <header
-      className="h-[52px] min-h-[52px] w-full px-6 flex items-center justify-between border-b border-[var(--border-dim)] bg-[var(--bg-base)] sticky top-0 z-30 select-none"
+      onTouchStart={handleHeaderTouchStart}
+      onTouchEnd={handleHeaderTouchEnd}
+      className="h-[52px] min-h-[52px] w-full px-4 sm:px-6 flex items-center justify-between border-b border-[var(--border-dim)] bg-[var(--bg-base)] sticky top-0 z-30 select-none touch-pan-y"
       id="main-header"
     >
-      {/* LEFT: Mobile hamburger (strictly hidden on md/desktop) + Current section title (H3) */}
+      {/* LEFT: Mobile hamburger (36px × 36px, strictly visible on <768px, md:hidden) + Section Title (H3) */}
       <div className="flex items-center gap-3">
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            className="md:hidden flex items-center justify-center w-9 h-9 min-w-[36px] min-h-[36px] rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
             aria-label="Toggle Navigation"
           >
             {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}

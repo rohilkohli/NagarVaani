@@ -69,7 +69,7 @@ export default function AnimatedNumber({
       : Math.round(displayValue).toLocaleString();
 
   return (
-    <span>
+    <span className="font-mono tabular-nums">
       {prefix}
       {formatted}
       {suffix}

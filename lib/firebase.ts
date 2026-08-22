@@ -4,12 +4,30 @@ import { getAuth, Auth } from "firebase/auth";
 import { getStorage, FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || (typeof window !== "undefined" ? (window as any).__ENV?.NEXT_PUBLIC_FIREBASE_API_KEY : "") || "AIzaSyDummyKeyForInitialDevSetup1234567890",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "nagarvaani-app.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "nagarvaani-app",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "nagarvaani-app.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1234567890:web:abcdef123456"
+  apiKey:
+    import.meta.env.VITE_FIREBASE_API_KEY ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_API_KEY || (window as any).__ENV?.NEXT_PUBLIC_FIREBASE_API_KEY : "") ||
+    "AIzaSyDummyKeyForInitialDevSetup1234567890",
+  authDomain:
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_AUTH_DOMAIN : "") ||
+    "nagarvaani-app.firebaseapp.com",
+  projectId:
+    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_PROJECT_ID : "") ||
+    "nagarvaani-app",
+  storageBucket:
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_STORAGE_BUCKET : "") ||
+    "nagarvaani-app.appspot.com",
+  messagingSenderId:
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_MESSAGING_SENDER_ID : "") ||
+    "1234567890",
+  appId:
+    import.meta.env.VITE_FIREBASE_APP_ID ||
+    (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_APP_ID : "") ||
+    "1:1234567890:web:abcdef123456",
 };
 
 // Initialize Firebase safely
