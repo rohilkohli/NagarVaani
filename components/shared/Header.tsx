@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { NavTab } from "./Sidebar";
+import ThemeToggle from "./ThemeToggle";
 import {
   Download,
   Menu,
@@ -206,6 +207,9 @@ export default function Header({
           <Download className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Export</span>
         </button>
+
+        {/* Theme Switcher Toggle (Light/Dark mode) */}
+        <ThemeToggle id="header-theme-toggle" />
 
         {/* Citizen Portal Ghost Link */}
         <button

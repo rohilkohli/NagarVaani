@@ -23,6 +23,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import VoiceInput from "@/components/citizen/VoiceInput";
 import NearYouPanel from "@/components/citizen/NearYouPanel";
 import CommunityTab from "@/components/citizen/CommunityTab";
+import ThemeToggle from "@/components/shared/ThemeToggle";
 
 interface CitizenPageProps {
   onNewSubmission?: (sub: Submission) => void;
@@ -513,34 +514,34 @@ export default function CitizenPage({
 
   return (
     <div
-      className="min-h-screen bg-[#fafaf9] text-[#1c1917] font-sans antialiased selection:bg-[#6366f1]/20 selection:text-[#1c1917]"
+      className="min-h-screen bg-[var(--panel-bg)] text-[var(--text-primary)] font-sans antialiased selection:bg-[#6366f1]/20 selection:text-[var(--text-primary)] transition-colors duration-200"
       id="citizen-portal-root"
     >
       {/* ========================================================================= */}
       {/* TOP NAVIGATION BAR */}
       {/* ========================================================================= */}
-      <header className="w-full bg-[#ffffff] border-b border-[#e5e4e0] sticky top-0 z-30 shadow-2xs">
+      <header className="w-full bg-[var(--bg-surface)] border-b border-[var(--border-dim)] sticky top-0 z-30 shadow-2xs transition-colors duration-200">
         <div className="max-w-[600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
           {/* Logo Left */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="w-7 h-7 rounded-[8px] bg-[#6366f1] flex items-center justify-center text-white shadow-2xs">
               <span className="text-[13px] font-bold">N</span>
             </div>
-            <span className="text-[15px] font-bold tracking-tight text-[#1c1917] hidden xs:inline">
+            <span className="text-[15px] font-bold tracking-tight text-[var(--text-primary)] hidden xs:inline">
               NagarVaani
             </span>
           </div>
 
           {/* Center: Tabs [📝 Report] [📍 Community] */}
-          <div className="flex items-center gap-1 bg-[#f5f5f4] p-1 rounded-[10px] border border-[#e5e4e0]">
+          <div className="flex items-center gap-1 bg-[var(--bg-elevated)] p-1 rounded-[10px] border border-[var(--border-dim)]">
             <button
               type="button"
               id="tab-citizen-report"
               onClick={() => setCitizenTab("report")}
               className={`px-2.5 sm:px-3 py-1 rounded-[7px] text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 select-none ${
                 citizenTab === "report"
-                  ? "bg-[#ffffff] text-[#1c1917] shadow-xs"
-                  : "text-[#78716c] hover:text-[#1c1917]"
+                  ? "bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               <span>📝</span>
@@ -552,8 +553,8 @@ export default function CitizenPage({
               onClick={() => setCitizenTab("community")}
               className={`px-2.5 sm:px-3 py-1 rounded-[7px] text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 select-none ${
                 citizenTab === "community"
-                  ? "bg-[#ffffff] text-[#1c1917] shadow-xs"
-                  : "text-[#78716c] hover:text-[#1c1917]"
+                  ? "bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               <span>📍</span>
@@ -561,22 +562,25 @@ export default function CitizenPage({
             </button>
           </div>
 
-          {/* Right Controls: Language Selector + Policymaker Dashboard */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right Controls: Theme Toggle + Language Selector + Policymaker Dashboard */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Theme Toggle Button */}
+            <ThemeToggle id="citizen-header-theme-toggle" />
+
             {/* Language Selector Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsLangDropdownOpen((prev) => !prev)}
-                className="h-8 px-2.5 rounded-[8px] border border-[#e5e4e0] bg-[#ffffff] hover:bg-[#f5f5f4] text-[#44403c] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                className="h-8 px-2.5 rounded-[8px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
               >
                 <span>{currentLang.flag}</span>
                 <span className="hidden sm:inline">{currentLang.name}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#78716c]" />
+                <ChevronDown className="w-3.5 h-3.5 text-[var(--text-tertiary)]" />
               </button>
 
               {isLangDropdownOpen && (
-                <div className="absolute right-0 mt-1 w-44 rounded-[10px] bg-[#ffffff] border border-[#e5e4e0] shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 mt-1 w-44 rounded-[10px] bg-[var(--bg-surface)] border border-[var(--border-base)] shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
                   {LANGUAGES.map((lang) => (
                     <button
                       key={lang.code}
@@ -584,10 +588,10 @@ export default function CitizenPage({
                         setCurrentLang(lang);
                         setIsLangDropdownOpen(false);
                       }}
-                      className={`w-full px-3 py-1.5 text-left text-[12px] flex items-center gap-2 hover:bg-[#f5f5f4] transition-colors cursor-pointer ${
+                      className={`w-full px-3 py-1.5 text-left text-[12px] flex items-center gap-2 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer ${
                         currentLang.code === lang.code
-                          ? "font-bold text-[#6366f1] bg-[#f5f5ff]"
-                          : "text-[#1c1917]"
+                          ? "font-bold text-[#6366f1] bg-[var(--brand-subtle)]"
+                          : "text-[var(--text-primary)]"
                       }`}
                     >
                       <span>{lang.flag}</span>
@@ -603,7 +607,7 @@ export default function CitizenPage({
               <button
                 type="button"
                 onClick={onNavigateToDashboard}
-                className="h-8 px-2.5 rounded-[8px] text-[12px] font-medium text-[#78716c] hover:text-[#1c1917] hover:bg-[#f5f5f4] transition-colors cursor-pointer"
+                className="h-8 px-2 sm:px-2.5 rounded-[8px] text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
               >
                 Dashboard →
               </button>

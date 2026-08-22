@@ -1,7 +1,9 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-:root {
+:root,
+[data-theme="dark"],
+.dark {
   /* Backgrounds — layered dark */
   --bg-base:      #0a0a0f;   /* true base, near-black with blue tint */
   --bg-surface:   #111118;   /* card surfaces */
@@ -9,14 +11,14 @@
   --bg-subtle:    #16161f;   /* sidebar, secondary panels */
 
   /* Borders — barely visible */
-  --border-dim:   rgba(255, 255, 255, 0.04);
-  --border-base:  rgba(255, 255, 255, 0.08);
-  --border-strong:rgba(255, 255, 255, 0.14);
+  --border-dim:   rgba(255, 255, 255, 0.05);
+  --border-base:  rgba(255, 255, 255, 0.1);
+  --border-strong:rgba(255, 255, 255, 0.18);
 
   /* Text */
   --text-primary:   #f4f4f6;
   --text-secondary: #8b8b9e;
-  --text-tertiary:  #4a4a5e;
+  --text-tertiary:  #5a5a72;
 
   /* Brand — indigo-violet spectrum */
   --brand-primary:   #6366f1;   /* indigo-500 */
@@ -31,6 +33,14 @@
   --teal:   #14b8a6;
   --purple: #a855f7;
   --orange: #f97316;
+
+  /* Citizen / Content theme variables */
+  --panel-bg:        #111118;
+  --panel-card:      #161622;
+  --panel-border:    rgba(255, 255, 255, 0.08);
+  --panel-subtle:    #1f1f2e;
+  --panel-input-bg:  #0d0d14;
+  --panel-hover:     #1e1e2d;
 
   /* Category colours — used consistently everywhere */
   --cat-roads:       #f97316;
@@ -54,6 +64,47 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
+}
+
+[data-theme="light"],
+.light {
+  /* Backgrounds — crisp modern light */
+  --bg-base:      #f8fafc;   /* slate-50 */
+  --bg-surface:   #ffffff;   /* pure white card */
+  --bg-elevated:  #f1f5f9;   /* slate-100 */
+  --bg-subtle:    #f8fafc;   /* sidebar, secondary panels */
+
+  /* Borders */
+  --border-dim:   #e2e8f0;   /* slate-200 */
+  --border-base:  #cbd5e1;   /* slate-300 */
+  --border-strong:#94a3b8;   /* slate-400 */
+
+  /* Text */
+  --text-primary:   #0f172a; /* slate-900 */
+  --text-secondary: #475569; /* slate-600 */
+  --text-tertiary:  #94a3b8; /* slate-400 */
+
+  /* Brand */
+  --brand-primary:   #6366f1;   /* indigo-500 */
+  --brand-secondary: #4f46e5;   /* indigo-600 */
+  --brand-glow:      rgba(99, 102, 241, 0.12);
+  --brand-subtle:    rgba(99, 102, 241, 0.08);
+
+  /* Semantic colours */
+  --red:    #dc2626;
+  --amber:  #d97706;
+  --green:  #16a34a;
+  --teal:   #0d9488;
+  --purple: #9333ea;
+  --orange: #ea580c;
+
+  /* Citizen / Content theme variables */
+  --panel-bg:        #fafaf9;
+  --panel-card:      #ffffff;
+  --panel-border:    #e2e8f0;
+  --panel-subtle:    #f1f5f9;
+  --panel-input-bg:  #ffffff;
+  --panel-hover:     #f8fafc;
 }
 
 * {

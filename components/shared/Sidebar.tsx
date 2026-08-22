@@ -1,6 +1,7 @@
 'use client';
 
 import React from "react";
+import ThemeToggle from "./ThemeToggle";
 import {
   LayoutDashboard,
   Map,
@@ -90,17 +91,15 @@ export default function Sidebar({
 
       {/* BOTTOM OF SIDEBAR (PINNED) */}
       <div className="p-3 border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] space-y-2">
-        {/* Row 1: green pulse dot + "LIVE" in green micro + "auto-updating" in var(--text-tertiary) small */}
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-dim)]">
-          <span className="w-2 h-2 rounded-full bg-[var(--green)] live-pulse shrink-0"></span>
+        {/* Row 1: green pulse dot + "LIVE" in green micro + Theme Toggle */}
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-dim)]">
           <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-[var(--green)] live-pulse shrink-0"></span>
             <span className="text-[10px] font-bold tracking-[0.06em] text-[var(--green)] uppercase">
               LIVE
             </span>
-            <span className="text-[11px] text-[var(--text-tertiary)] truncate">
-              auto-updating
-            </span>
           </div>
+          <ThemeToggle id="sidebar-theme-toggle" />
         </div>
 
         {/* Row 2: "🌱 Seed Demo Data" ghost button (full width) */}

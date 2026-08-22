@@ -213,46 +213,70 @@ export default function PriorityPanel({
       .slice(0, 3);
   }, [submissions, allSubmissions]);
 
-  // Fetch AI priorities from Gemini API with fallback
-  const fetchPriorities = useCallback(async () => {
-    setInternalLoading(true);
+  // Compute signature of submissions to prevent redundant network requests
+  const submissionsSignature = useMemo(() => {
+    if (!submissions || submissions.length === 0) return "empty";
+    return `${submissions.length}_${submissions.slice(0, 5).map((s) => s.id || s.firestoreId).join("_")}`;
+  }, [submissions]);
 
-    try {
-      const res = await fetch("/api/prioritize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissions }),
-      });
+  const lastFetchSignatureRef = React.useRef<string>("");
+  const lastFetchTimeRef = React.useRef<number>(0);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
-          setRecommendations(data.recommendations);
-          const now = new Date();
-          setLastUpdated(
-            now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-          );
-          setInternalLoading(false);
-          return;
-        }
+  // Fetch AI priorities from Gemini API with fallback and throttling
+  const fetchPriorities = useCallback(
+    async (force = false) => {
+      const now = Date.now();
+      // Throttle: don't re-fetch within 20s unless forced or signature changed
+      if (
+        !force &&
+        lastFetchSignatureRef.current === submissionsSignature &&
+        now - lastFetchTimeRef.current < 20000 &&
+        recommendations.length > 0
+      ) {
+        return;
       }
 
-      const fallback = generateLocalPriorities(submissions);
-      setRecommendations(fallback);
-      setLastUpdated("just now");
-    } catch (err: any) {
-      console.warn("Error fetching AI priorities, using synthesized clusters:", err);
-      const fallback = generateLocalPriorities(submissions);
-      setRecommendations(fallback);
-      setLastUpdated("just now");
-    } finally {
-      setInternalLoading(false);
-    }
-  }, [submissions]);
+      lastFetchSignatureRef.current = submissionsSignature;
+      lastFetchTimeRef.current = now;
+      setInternalLoading(true);
+
+      try {
+        const res = await fetch("/api/prioritize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ submissions }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+            setRecommendations(data.recommendations);
+            const d = new Date();
+            setLastUpdated(
+              d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            );
+            setInternalLoading(false);
+            return;
+          }
+        }
+
+        const fallback = generateLocalPriorities(submissions);
+        setRecommendations(fallback);
+        setLastUpdated("just now");
+      } catch (err: any) {
+        const fallback = generateLocalPriorities(submissions);
+        setRecommendations(fallback);
+        setLastUpdated("just now");
+      } finally {
+        setInternalLoading(false);
+      }
+    },
+    [submissions, submissionsSignature, recommendations.length]
+  );
 
   useEffect(() => {
     fetchPriorities();
-  }, [fetchPriorities]);
+  }, [submissionsSignature, fetchPriorities]);
 
   const toggleExpand = (rank: number) => {
     setExpandedRank((prev) => (prev === rank ? null : rank));
@@ -297,7 +321,7 @@ export default function PriorityPanel({
         {/* Refresh Icon Button */}
         <button
           type="button"
-          onClick={fetchPriorities}
+          onClick={() => fetchPriorities(true)}
           disabled={isLoading}
           className="p-1.5 rounded-[var(--radius-sm)] border border-[var(--border-base)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer disabled:opacity-50"
           title="Re-run Gemini AI Prioritization"

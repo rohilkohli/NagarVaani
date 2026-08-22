@@ -20,6 +20,7 @@ import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import ThemeToggle from "@/components/shared/ThemeToggle";
 
 interface TrackComplaintProps {
   trackingId?: string;
@@ -205,7 +206,7 @@ export default function TrackComplaint({
   const categoryStyle = submission ? CATEGORY_COLORS[submission.category] || CATEGORY_COLORS.roads : CATEGORY_COLORS.roads;
 
   return (
-    <div className="min-h-screen bg-[#fafaf9] text-[#1c1917] font-sans antialiased py-8 px-4 sm:px-6">
+    <div className="min-h-screen bg-[var(--panel-bg)] text-[var(--text-primary)] font-sans antialiased py-8 px-4 sm:px-6 transition-colors duration-200">
       <div className="max-w-[680px] mx-auto space-y-6">
         
         {/* TOP NAVIGATION BAR */}
@@ -213,33 +214,37 @@ export default function TrackComplaint({
           <button
             type="button"
             onClick={onNavigateToCitizen}
-            className="h-9 px-3 rounded-[10px] border border-[#e5e4e0] bg-[#ffffff] hover:bg-[#f5f5f4] text-[#44403c] text-[13px] font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-colors"
+            className="h-9 px-3 rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[13px] font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Grievance Portal</span>
           </button>
 
-          {onNavigateToDashboard && (
-            <button
-              type="button"
-              onClick={onNavigateToDashboard}
-              className="h-9 px-3 rounded-[10px] bg-[#6366f1]/10 text-[#6366f1] hover:bg-[#6366f1]/15 text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <span>Policymaker Dashboard</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <ThemeToggle id="track-theme-toggle" />
+
+            {onNavigateToDashboard && (
+              <button
+                type="button"
+                onClick={onNavigateToDashboard}
+                className="h-9 px-3 rounded-[10px] bg-[#6366f1]/10 text-[#6366f1] hover:bg-[#6366f1]/15 text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <span>Policymaker Dashboard</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* SEARCH BAR (For tracking any reference ID) */}
         <form onSubmit={handleSearchSubmit} className="relative flex items-center">
-          <Search className="w-4 h-4 absolute left-3.5 text-[#78716c] pointer-events-none" />
+          <Search className="w-4 h-4 absolute left-3.5 text-[var(--text-tertiary)] pointer-events-none" />
           <input
             type="text"
             placeholder="Enter tracking ID (e.g. NV-849201 or seed-in-101)..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full h-11 pl-10 pr-24 rounded-[12px] border border-[#e5e4e0] bg-[#ffffff] text-[14px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] shadow-2xs transition-all font-mono"
+            className="w-full h-11 pl-10 pr-24 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-surface)] text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] shadow-2xs transition-all font-mono"
           />
           <button
             type="submit"

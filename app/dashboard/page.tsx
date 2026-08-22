@@ -10,6 +10,7 @@ import DemandHeatmap from "@/components/dashboard/DemandHeatmap";
 import PriorityPanel from "@/components/dashboard/PriorityPanel";
 import PriorityRankingsView from "@/components/dashboard/PriorityRankingsView";
 import BRICSComparison from "@/components/dashboard/BRICSComparison";
+import ThemeToggle from "@/components/shared/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import {
   Search,
@@ -941,6 +942,22 @@ export default function DashboardPage({
                     }`}
                   />
                 </button>
+              </div>
+            </div>
+
+            {/* THEME & APPEARANCE SWITCH */}
+            <div className="p-4 rounded-[var(--radius-md)] bg-[var(--bg-elevated)]/60 border border-[var(--border-base)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[14px] font-semibold text-[var(--text-primary)]">
+                  Interface Theme & Appearance
+                </span>
+                <p className="text-[12px] text-[var(--text-secondary)] max-w-xl">
+                  Toggle between high-contrast dark room mode and clean daylight mode across both the executive analytics dashboard and citizen interface.
+                </p>
+              </div>
+
+              <div className="shrink-0">
+                <ThemeToggle variant="switch" id="settings-theme-toggle" />
               </div>
             </div>
 

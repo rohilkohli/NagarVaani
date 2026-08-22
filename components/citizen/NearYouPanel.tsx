@@ -140,26 +140,26 @@ export default function NearYouPanel({
 
   return (
     <div
-      className="text-left bg-[#ffffff] border border-[#e5e4e0] rounded-[14px] p-4.5 sm:p-5 space-y-3.5 shadow-xs"
+      className="text-left bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[14px] p-4.5 sm:p-5 space-y-3.5 shadow-xs"
       id="near-you-reports-panel"
     >
       {/* SECTION HEADER & SOCIAL PROOF */}
-      <div className="flex items-center justify-between pb-2 border-b border-[#f5f5f4]">
+      <div className="flex items-center justify-between pb-2 border-b border-[var(--border-dim)]">
         <div className="flex items-center gap-2">
           <span className="text-[16px]">📍</span>
-          <h3 className="text-[14px] font-bold text-[#1c1917] tracking-tight">
+          <h3 className="text-[14px] font-bold text-[var(--text-primary)] tracking-tight">
             Reports near {district || "your area"}
           </h3>
         </div>
-        <span className="text-[11px] font-medium text-[#78716c] bg-[#f5f5f4] px-2 py-0.5 rounded-full">
+        <span className="text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--bg-elevated)] px-2 py-0.5 rounded-full">
           Live Community
         </span>
       </div>
 
       {/* SOCIAL PROOF BANNER */}
       {reports.length >= 3 && (
-        <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-[#f0fdf4] border border-[#bbf7d0] text-[#166534] text-[12px] font-medium">
-          <Users className="w-4 h-4 text-[#16a34a] shrink-0" />
+        <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-[12px] font-medium">
+          <Users className="w-4 h-4 text-emerald-500 shrink-0" />
           <span>
             Your report joins <strong className="font-bold">{totalDistrictCount}</strong> others from {district}.
           </span>
@@ -168,18 +168,18 @@ export default function NearYouPanel({
 
       {/* CONTENT LIST / STATES */}
       {isLoading ? (
-        <div className="py-6 flex items-center justify-center gap-2 text-[#78716c] text-[12px]">
+        <div className="py-6 flex items-center justify-center gap-2 text-[var(--text-secondary)] text-[12px]">
           <Loader2 className="w-4 h-4 animate-spin text-[#6366f1]" />
           <span>Checking nearby citizen reports...</span>
         </div>
       ) : reports.length === 0 ? (
         /* ZERO RESULTS STATE */
-        <div className="py-4 px-3 rounded-[10px] bg-[#f5f5f4] border border-[#e5e4e0] text-center space-y-1">
+        <div className="py-4 px-3 rounded-[10px] bg-[var(--bg-elevated)] border border-[var(--border-dim)] text-center space-y-1">
           <div className="text-[18px]">🌱</div>
-          <p className="text-[12px] font-semibold text-[#1c1917]">
+          <p className="text-[12px] font-semibold text-[var(--text-primary)]">
             You're the first to report from {district || "this area"}!
           </p>
-          <p className="text-[11px] text-[#78716c]">
+          <p className="text-[11px] text-[var(--text-secondary)]">
             Your report will appear here for others in your community.
           </p>
         </div>
@@ -195,26 +195,26 @@ export default function NearYouPanel({
             return (
               <div
                 key={item.id || item.firestoreId || idx}
-                className="flex items-center justify-between gap-3 p-2.5 rounded-[10px] bg-[#fafaf9] hover:bg-[#f5f5f4] border border-[#f0efea] transition-colors"
+                className="flex items-center justify-between gap-3 p-2.5 rounded-[10px] bg-[var(--bg-elevated)]/60 hover:bg-[var(--bg-elevated)] border border-[var(--border-dim)] transition-colors"
               >
                 {/* Left: Category Emoji */}
-                <div className="w-8 h-8 rounded-[8px] bg-white border border-[#e5e4e0] flex items-center justify-center text-[15px] shrink-0 shadow-2xs">
+                <div className="w-8 h-8 rounded-[8px] bg-[var(--bg-surface)] border border-[var(--border-dim)] flex items-center justify-center text-[15px] shrink-0 shadow-2xs">
                   {emoji}
                 </div>
 
                 {/* Center: Summary English (truncated to 60 chars) */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] text-[#292524] font-medium leading-[1.35] line-clamp-1">
+                  <p className="text-[12px] text-[var(--text-primary)] font-medium leading-[1.35] line-clamp-1">
                     {truncated}
                   </p>
-                  <span className="text-[10px] text-[#a8a29e] uppercase font-bold tracking-wider">
+                  <span className="text-[10px] text-[var(--text-tertiary)] uppercase font-bold tracking-wider">
                     {item.category}
                   </span>
                 </div>
 
                 {/* Right: X days ago in grey */}
                 <div className="shrink-0 text-right">
-                  <span className="text-[11px] font-medium text-[#78716c] whitespace-nowrap">
+                  <span className="text-[11px] font-medium text-[var(--text-tertiary)] whitespace-nowrap">
                     {timeAgo}
                   </span>
                 </div>

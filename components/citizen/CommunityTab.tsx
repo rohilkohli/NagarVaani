@@ -252,17 +252,17 @@ export default function CommunityTab({
             CITIZEN VOICES • COMMUNITY REPORTS
           </span>
           {/* Country Selector */}
-          <div className="flex items-center gap-1 bg-white border border-[#e5e4e0] rounded-[8px] px-2 py-1 shadow-2xs">
+          <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[8px] px-2 py-1 shadow-2xs">
             <span className="text-[12px]">
               {BRICS_COUNTRIES.find((c) => c.name.toLowerCase() === selectedCountry.toLowerCase())?.flag || "🌐"}
             </span>
             <select
               value={selectedCountry}
               onChange={(e) => setSelectedCountry(e.target.value)}
-              className="text-[12px] font-semibold text-[#44403c] bg-transparent border-none outline-none cursor-pointer pr-1"
+              className="text-[12px] font-semibold text-[var(--text-primary)] bg-transparent border-none outline-none cursor-pointer pr-1"
             >
               {BRICS_COUNTRIES.map((c) => (
-                <option key={c.id} value={c.name}>
+                <option key={c.id} value={c.name} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
                   {c.flag} {c.name}
                 </option>
               ))}
@@ -270,10 +270,10 @@ export default function CommunityTab({
           </div>
         </div>
 
-        <h1 className="text-[28px] font-bold tracking-[-0.02em] leading-[1.2] text-[#1c1917]">
+        <h1 className="text-[28px] font-bold tracking-[-0.02em] leading-[1.2] text-[var(--text-primary)]">
           What Citizens Are Reporting
         </h1>
-        <p className="text-[14px] text-[#78716c]">
+        <p className="text-[14px] text-[var(--text-secondary)]">
           Real-time infrastructure grievances shaping municipal policy in {selectedCountry}. Upvote issues that affect you to raise their priority score.
         </p>
         <div className="w-[40px] h-[2px] rounded-full bg-[#6366f1] mt-2" />
@@ -291,8 +291,8 @@ export default function CommunityTab({
                 onClick={() => setSelectedCategory(key)}
                 className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap select-none ${
                   isSelected
-                    ? "bg-[#1c1917] text-white shadow-xs"
-                    : "bg-[#ffffff] text-[#57534e] hover:bg-[#f5f5f4] border border-[#e5e4e0]"
+                    ? "bg-[var(--text-primary)] text-[var(--bg-base)] shadow-xs"
+                    : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] border border-[var(--border-dim)]"
                 }`}
               >
                 <span>{meta.emoji}</span>
@@ -304,19 +304,19 @@ export default function CommunityTab({
 
         {/* SEARCH INPUT BAR */}
         <div className="relative">
-          <Search className="w-4 h-4 text-[#a8a29e] absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[var(--text-tertiary)] absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by city, district, or keywords (e.g. Patna, water, blackout)..."
-            className="w-full h-10 pl-9 pr-4 rounded-[12px] bg-white border border-[#e5e4e0] text-[13px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] transition-all shadow-2xs"
+            className="w-full h-10 pl-9 pr-4 rounded-[12px] bg-[var(--bg-surface)] border border-[var(--border-dim)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] transition-all shadow-2xs"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="text-[11px] font-bold text-[#78716c] hover:text-[#1c1917] absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[#f5f5f4]"
+              className="text-[11px] font-bold text-[var(--text-tertiary)] hover:text-[var(--text-primary)] absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]"
             >
               Clear
             </button>
@@ -326,15 +326,15 @@ export default function CommunityTab({
 
       {/* FEED LIST */}
       {isLoading ? (
-        <div className="py-16 text-center space-y-3 bg-white rounded-[16px] border border-[#e5e4e0]">
+        <div className="py-16 text-center space-y-3 bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)]">
           <Loader2 className="w-6 h-6 animate-spin text-[#6366f1] mx-auto" />
-          <p className="text-[13px] text-[#78716c]">Loading community reports...</p>
+          <p className="text-[13px] text-[var(--text-secondary)]">Loading community reports...</p>
         </div>
       ) : filteredSubmissions.length === 0 ? (
-        <div className="py-14 text-center space-y-3 bg-white rounded-[16px] border border-[#e5e4e0] p-6">
+        <div className="py-14 text-center space-y-3 bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)] p-6">
           <div className="text-[28px]">🔍</div>
-          <h3 className="text-[15px] font-bold text-[#1c1917]">No reports found</h3>
-          <p className="text-[13px] text-[#78716c] max-w-sm mx-auto">
+          <h3 className="text-[15px] font-bold text-[var(--text-primary)]">No reports found</h3>
+          <p className="text-[13px] text-[var(--text-secondary)] max-w-sm mx-auto">
             No complaints matching your selected category and search query in {selectedCountry}.
           </p>
           {onNavigateToReport && (
@@ -349,11 +349,11 @@ export default function CommunityTab({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-[12px] text-[#78716c] px-1">
+          <div className="flex items-center justify-between text-[12px] text-[var(--text-secondary)] px-1">
             <span>
-              Showing <strong className="text-[#1c1917]">{filteredSubmissions.length}</strong> reports in {selectedCountry}
+              Showing <strong className="text-[var(--text-primary)]">{filteredSubmissions.length}</strong> reports in {selectedCountry}
             </span>
-            <span className="text-[11px] font-mono text-[#a8a29e]">
+            <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
               Sorted by most recent
             </span>
           </div>
@@ -370,7 +370,7 @@ export default function CommunityTab({
             return (
               <div
                 key={targetKey}
-                className="bg-[#ffffff] border border-[#e5e4e0] hover:border-[#cbd5e1] rounded-[14px] p-4.5 space-y-3 shadow-2xs transition-all hover:shadow-xs"
+                className="bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:border-[var(--border-base)] rounded-[14px] p-4.5 space-y-3 shadow-2xs transition-all hover:shadow-xs"
               >
                 {/* TOP ROW: Category Badge + District + X hours ago */}
                 <div className="flex items-center justify-between gap-2">
@@ -382,11 +382,11 @@ export default function CommunityTab({
                       <span className="capitalize">{item.category}</span>
                     </span>
 
-                    <span className="text-[13px] font-bold text-[#1c1917] flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-[#78716c] shrink-0" />
+                    <span className="text-[13px] font-bold text-[var(--text-primary)] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />
                       <span>{item.district}</span>
                       {item.state && (
-                        <span className="text-[12px] font-normal text-[#78716c]">
+                        <span className="text-[12px] font-normal text-[var(--text-secondary)]">
                           ({item.state})
                         </span>
                       )}
@@ -394,19 +394,19 @@ export default function CommunityTab({
                   </div>
 
                   {/* Relative Time */}
-                  <div className="flex items-center gap-1 text-[11px] font-medium text-[#78716c] shrink-0">
-                    <Clock className="w-3 h-3 text-[#a8a29e]" />
+                  <div className="flex items-center gap-1 text-[11px] font-medium text-[var(--text-tertiary)] shrink-0">
+                    <Clock className="w-3 h-3 text-[var(--text-tertiary)]" />
                     <span>{timeAgo}</span>
                   </div>
                 </div>
 
                 {/* BOTTOM: Summary Text (Anonymised — no personal details) */}
-                <p className="text-[13.5px] text-[#334155] leading-[1.45] font-normal">
+                <p className="text-[13.5px] text-[var(--text-secondary)] leading-[1.45] font-normal">
                   {summaryClean}
                 </p>
 
                 {/* FOOTER: Action Bar & "👍 Same issue" Button */}
-                <div className="flex items-center justify-between pt-2 border-t border-[#f5f5f4]">
+                <div className="flex items-center justify-between pt-2 border-t border-[var(--border-dim)]">
                   <div className="flex items-center gap-2">
                     {/* UPVOTE BUTTON */}
                     <button
@@ -415,18 +415,18 @@ export default function CommunityTab({
                       className={`h-8 px-3 rounded-[8px] text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 select-none ${
                         isUpvoted
                           ? "bg-[#eef2ff] border border-[#6366f1] text-[#4f46e5] shadow-2xs font-bold"
-                          : "bg-[#f5f5f4] hover:bg-[#e5e4e0] border border-[#e5e4e0] text-[#44403c]"
+                          : "bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)] border border-[var(--border-dim)] text-[var(--text-primary)]"
                       }`}
                       title="Confirm this issue is happening in your area to raise its priority"
                     >
-                      <ThumbsUp className={`w-3.5 h-3.5 ${isUpvoted ? "fill-[#6366f1] text-[#6366f1]" : "text-[#78716c]"}`} />
+                      <ThumbsUp className={`w-3.5 h-3.5 ${isUpvoted ? "fill-[#6366f1] text-[#6366f1]" : "text-[var(--text-secondary)]"}`} />
                       <span>{isUpvoted ? "Upvoted" : "Same issue"}</span>
                       {upvoteCount > 0 && (
                         <span
                           className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                             isUpvoted
                               ? "bg-[#6366f1] text-white"
-                              : "bg-[#e5e4e0] text-[#44403c]"
+                              : "bg-[var(--border-base)] text-[var(--text-primary)]"
                           }`}
                         >
                           {upvoteCount}
@@ -440,7 +440,7 @@ export default function CommunityTab({
                     <button
                       type="button"
                       onClick={() => onNavigateToTrack(item.id!)}
-                      className="text-[11px] font-mono text-[#78716c] hover:text-[#6366f1] hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] font-mono text-[var(--text-tertiary)] hover:text-[#6366f1] hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <span>{item.id}</span>
                       <span>→</span>

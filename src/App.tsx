@@ -9,8 +9,10 @@ import TrackComplaint from "@/components/citizen/TrackComplaint";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
 import { collection, addDoc } from "firebase/firestore";
+import { useTheme } from "@/lib/themeContext";
 
 export default function App() {
+  const { theme } = useTheme();
   const [currentTrackId, setCurrentTrackId] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
@@ -170,14 +172,14 @@ export default function App() {
     }
   }, []);
 
-  // FIX 1 — Smooth body background transition between citizen portal, tracking, and dashboard
+  // Smooth body background transition between citizen portal, tracking, and dashboard with active theme
   useEffect(() => {
-    if (activeTab === 'citizen' || activeTab === 'track') {
-      document.body.style.backgroundColor = '#fafaf9';
-    } else {
+    if (theme === 'dark') {
       document.body.style.backgroundColor = '#0a0a0f';
+    } else {
+      document.body.style.backgroundColor = (activeTab === 'citizen' || activeTab === 'track') ? '#fafaf9' : '#f8fafc';
     }
-  }, [activeTab]);
+  }, [activeTab, theme]);
 
   // Touch gesture handling for mobile drawer (swipe from left edge to open, swipe to close)
   useEffect(() => {
@@ -237,10 +239,10 @@ export default function App() {
     );
   }
 
-  // 2. COMPLAINT TRACKING VIEW (Full-width single column, warm light aesthetic)
+  // 2. COMPLAINT TRACKING VIEW (Full-width single column)
   if (activeTab === "track") {
     return (
-      <div className="transition-colors duration-300 min-h-screen bg-[#fafaf9]">
+      <div className="transition-colors duration-300 min-h-screen bg-[var(--panel-bg)]">
         <TrackComplaint
           trackingId={currentTrackId}
           onNavigateToCitizen={() => handleSelectTab("citizen")}
@@ -302,8 +304,8 @@ export default function App() {
         </div>
       )}
 
-      {/* MAIN CONTENT WORKSPACE (Offset by 220px on desktop) */}
-      <div className="flex-1 flex flex-col min-w-0 md:pl-[220px]">
+      {/* MAIN CONTENT WORKSPACE */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* PERSISTENT TOP HEADER */}
         <Header
           activeTab={activeTab}
@@ -318,7 +320,7 @@ export default function App() {
         {/* MAIN BODY CONTAINER WITH KEY TO TRIGGER PAGE TRANSITION */}
         <main
           key={activeTab}
-          className="page-transition-enter flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto"
+          className="page-transition-enter flex-1 p-4 sm:p-6 lg:p-6 w-full max-w-[1600px] mx-auto"
         >
           <DashboardPage
             activeTab={activeTab as any}
