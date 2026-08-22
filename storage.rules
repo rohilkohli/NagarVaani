@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /complaints/{fileName} {
+      // Anyone can read complaint photos (for community display)
+      allow read: if true;
+      // Anyone can upload but enforce size and type limits
+      allow write: if 
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+    // Block everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

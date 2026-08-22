@@ -10,6 +10,7 @@ import DemandHeatmap from "@/components/dashboard/DemandHeatmap";
 import PriorityPanel from "@/components/dashboard/PriorityPanel";
 import PriorityRankingsView from "@/components/dashboard/PriorityRankingsView";
 import BRICSComparison from "@/components/dashboard/BRICSComparison";
+import DepartmentView from "@/components/dashboard/DepartmentView";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,9 +26,10 @@ import {
   Copy,
   Check,
   Flag,
+  Building2,
 } from "lucide-react";
 
-export type DashboardTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "priority";
+export type DashboardTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "priority" | "departments";
 
 function formatRelativeTime(date: Date | string | any): string {
   if (!date) return "just now";
@@ -137,6 +139,10 @@ export default function DashboardPage({
                 created_at: d.created_at ? new Date(d.created_at) : new Date(),
                 status: (d.status as Submission["status"]) || "classified",
                 upvotes: Number(d.upvotes) || 0,
+                department_id: d.department_id || undefined,
+                department_name: d.department_name || undefined,
+                sla_deadline: d.sla_deadline || undefined,
+                sla_status: d.sla_status || undefined,
               };
             });
             setSubmissions(data);
@@ -341,6 +347,18 @@ export default function DashboardPage({
 
   if (activeTab === "priority") {
     return <PriorityRankingsView submissions={filteredSubmissions} />;
+  }
+
+  if (activeTab === "departments") {
+    return (
+      <DepartmentView
+        submissions={filteredSubmissions}
+        onNavigateToReports={(category, filterTerm) => {
+          handleNavigateToReportsFiltered(filterTerm || "", category || "all");
+        }}
+        onSelectTab={onSelectTab}
+      />
+    );
   }
 
   return (

@@ -47,6 +47,35 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRange>("30d");
 
+  // Detect online/offline status & PWA install prompt
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [installPrompt, setInstallPrompt] = useState<any | null>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    // Capture install prompt
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      const dismissed = localStorage.getItem("nv_install_dismissed");
+      if (!dismissed) setShowInstallBanner(true);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
   // Sync tab with browser URL history
   const handleSelectTab = (tab: NavTab, specificTrackId?: string) => {
     setActiveTab(tab);
@@ -123,6 +152,10 @@ export default function App() {
                 created_at: d.created_at ? new Date(d.created_at) : new Date(),
                 status: (d.status as Submission["status"]) || "classified",
                 upvotes: Number(d.upvotes) || 0,
+                department_id: d.department_id || undefined,
+                department_name: d.department_name || undefined,
+                sla_deadline: d.sla_deadline || undefined,
+                sla_status: d.sla_status || undefined,
               };
             });
             setLiveSubmissions(data);
@@ -272,7 +305,45 @@ export default function App() {
   // 1. CITIZEN PORTAL (Full-width single column, no sidebar, warm light aesthetic)
   if (activeTab === "citizen") {
     return (
-      <div className="transition-colors duration-300 min-h-screen">
+      <div className="transition-colors duration-300 min-h-screen flex flex-col">
+        {/* Offline banner (show in citizen portal only): */}
+        {!isOnline && (
+          <div className="w-full bg-amber-500 text-white text-center py-2 px-4 text-[13px] font-medium z-50 sticky top-0 shadow-xs">
+            📡 You're offline. Your complaint will be saved and submitted when you reconnect.
+          </div>
+        )}
+
+        {/* Install banner (show below offline banner): */}
+        {showInstallBanner && isOnline && (
+          <div className="w-full bg-[#6366f1] text-white flex items-center justify-between px-4 py-2.5 z-40 relative shadow-xs">
+            <span className="text-[13px]">
+              📲 Add NagarVaani to your home screen for faster access
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  installPrompt?.prompt();
+                  setShowInstallBanner(false);
+                }}
+                className="text-[12px] font-semibold bg-white text-[#6366f1] px-3 py-1 rounded-md cursor-pointer hover:bg-slate-100 transition-colors"
+              >
+                Install
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem("nv_install_dismissed", "1");
+                  setShowInstallBanner(false);
+                }}
+                className="text-[12px] opacity-70 hover:opacity-100 px-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         <CitizenPage
           onNavigateToDashboard={() => handleSelectTab("overview")}
           onNavigateToTrack={(id) => {

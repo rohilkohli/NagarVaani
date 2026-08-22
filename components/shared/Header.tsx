@@ -59,6 +59,7 @@ export default function Header({
     reports: t("allSubmissions", "All Reports"),
     settings: t("settings", "System Settings"),
     priority: t("priorityInterventions", "AI Priorities"),
+    departments: t("departments", "Department SLAs & Routing"),
     citizen: t("citizenPortal", "Submit Grievance"),
   };
 

@@ -567,6 +567,7 @@ export const ALL_SEED_SUBMISSIONS: Submission[] = [
   ...generateBricsSubmissions(),
 ].map((sub, idx) => ({
   ...sub,
+  source: sub.source || (idx % 3 === 0 ? "whatsapp" : "web"),
   upvotes: sub.upvotes ?? ((idx * 7 + 3) % 18 + 1),
 }));
 

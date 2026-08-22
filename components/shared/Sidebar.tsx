@@ -12,9 +12,10 @@ import {
   Sparkles,
   Sprout,
   RotateCw,
+  Building2,
 } from "lucide-react";
 
-export type NavTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "citizen" | "priority" | "track";
+export type NavTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "citizen" | "priority" | "track" | "departments";
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -37,6 +38,7 @@ export default function Sidebar({
     { id: "overview", label: t("overview", "Overview"), icon: LayoutDashboard },
     { id: "heatmap", label: t("demandHeatmap", "Heatmap"), icon: Map },
     { id: "priority", label: t("priorityInterventions", "AI Priorities"), icon: Sparkles },
+    { id: "departments", label: t("departments", "Departments"), icon: Building2 },
     { id: "brics", label: t("bricsComparison", "BRICS View"), icon: Globe2 },
     { id: "reports", label: t("allSubmissions", "All Reports"), icon: FileText },
     { id: "settings", label: t("settings", "Settings"), icon: Settings },

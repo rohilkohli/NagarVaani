@@ -152,6 +152,20 @@ export default function StatsPanel({
     return submissions.filter((s) => s.status === "resolved").length;
   }, [submissions]);
 
+  // Channel breakdown counts
+  const { webCount, whatsappCount } = useMemo(() => {
+    let web = 0;
+    let wa = 0;
+    submissions.forEach((s) => {
+      if (s.source === "whatsapp") {
+        wa += 1;
+      } else {
+        web += 1;
+      }
+    });
+    return { webCount: web, whatsappCount: wa };
+  }, [submissions]);
+
   const resolutionRate = useMemo(() => {
     if (totalCount === 0) return 0;
     return Math.round((resolvedCount / totalCount) * 100);
@@ -528,6 +542,45 @@ export default function StatsPanel({
             {/* Bottom: Subtitle: "{resolved} of {total} addressed" */}
             <div className="text-[12px] text-[var(--text-secondary)]">
               {resolvedCount} of {totalCount} addressed
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5TH CARD / ROW — CHANNEL BREAKDOWN */}
+      {showStatCards && (
+        <div
+          id="channel-breakdown-row"
+          className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-3.5 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+              CHANNEL BREAKDOWN
+            </span>
+            <span className="text-[11px] text-[var(--text-secondary)] hidden sm:inline">
+              • Ingestion channels
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            {/* Web Portal Pill */}
+            <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-2 px-3 py-1.5 rounded-[10px] bg-[var(--bg-elevated)] border border-[var(--border-dim)]">
+              <span className="text-[13px] flex items-center gap-1.5 text-[var(--text-primary)] font-medium">
+                <span>📱</span> Web portal:
+              </span>
+              <span className="font-mono text-[13px] font-bold text-[var(--brand-primary)] bg-[var(--brand-subtle)] px-2 py-0.5 rounded-[6px]">
+                {webCount}
+              </span>
+            </div>
+
+            {/* WhatsApp Pill */}
+            <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-2 px-3 py-1.5 rounded-[10px] bg-[#25D366]/10 border border-[#25D366]/30">
+              <span className="text-[13px] flex items-center gap-1.5 text-[var(--text-primary)] font-medium">
+                <span>💬</span> WhatsApp:
+              </span>
+              <span className="font-mono text-[13px] font-bold text-[#25D366] bg-[#25D366]/20 px-2 py-0.5 rounded-[6px]">
+                {whatsappCount}
+              </span>
             </div>
           </div>
         </div>

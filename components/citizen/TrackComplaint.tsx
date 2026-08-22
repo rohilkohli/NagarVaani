@@ -116,6 +116,14 @@ export default function TrackComplaint({
               created_at: data.created_at ? new Date(data.created_at) : new Date(),
               status: (data.status as any) || "classified",
               upvotes: Number(data.upvotes) || 0,
+              source: data.source,
+              whatsapp_from: data.whatsapp_from,
+              duplicate_of: data.duplicate_of,
+              duplicate_confidence: data.duplicate_confidence,
+              photo_description: data.photo_description,
+              photo_severity: data.photo_severity,
+              photo_safety_hazard: data.photo_safety_hazard,
+              ai_confidence: data.ai_confidence,
             };
           }
         });
@@ -478,6 +486,22 @@ export default function TrackComplaint({
                       className="w-full h-full object-cover"
                     />
                   </div>
+
+                  {submission.photo_description && (
+                    <div className="mt-2 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-500 mb-1">
+                        🤖 AI Photo Analysis
+                      </p>
+                      <p className="text-[13px] text-[var(--text-primary)]">
+                        {submission.photo_description}
+                      </p>
+                      {submission.photo_safety_hazard && (
+                        <p className="mt-1 text-[12px] font-bold text-red-500">
+                          ⚠️ Safety hazard detected — flagged for urgent review
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

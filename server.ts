@@ -3,6 +3,10 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import cors from "cors";
+import { getDepartmentForCategory, getSLADeadline } from "./lib/departments";
 
 dotenv.config();
 
@@ -10,7 +14,93 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Security headers
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "maps.googleapis.com",
+            "*.firebaseapp.com",
+          ],
+          styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+          imgSrc: [
+            "'self'",
+            "data:",
+            "*.googleapis.com",
+            "firebasestorage.googleapis.com",
+            "maps.gstatic.com",
+          ],
+          connectSrc: [
+            "'self'",
+            "*.googleapis.com",
+            "*.firebaseio.com",
+            "*.google-analytics.com",
+            "generativelanguage.googleapis.com",
+          ],
+          fontSrc: ["'self'", "fonts.gstatic.com"],
+        },
+      },
+    })
+  );
+
+  // CORS — only allow our own origin in production
+  app.use(
+    cors({
+      origin:
+        process.env.NODE_ENV === "production"
+          ? [process.env.APP_URL || "", "https://nagarvaani.com"]
+          : "*",
+      methods: ["GET", "POST", "PATCH"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    })
+  );
+
+  // Rate limiting — global
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." },
+  });
+  app.use("/api/", globalLimiter);
+
+  // Stricter rate limit for submission endpoint
+  const submitLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10, // max 10 submissions per IP per hour
+    message: {
+      error: "Submission limit reached. Please wait before submitting again.",
+    },
+  });
+  app.use("/api/submit", submitLimiter);
+  app.use("/api/classify", submitLimiter);
+
   app.use(express.json({ limit: "10mb" }));
+
+  // Input sanitization middleware
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === "object") {
+      // Strip any HTML tags from text fields
+      const sanitize = (obj: any): any => {
+        if (typeof obj === "string") {
+          return obj.replace(/<[^>]*>/g, "").trim();
+        }
+        if (typeof obj === "object" && obj !== null) {
+          return Object.fromEntries(
+            Object.entries(obj).map(([k, v]) => [k, sanitize(v)])
+          );
+        }
+        return obj;
+      };
+      req.body = sanitize(req.body);
+    }
+    next();
+  });
 
   // API Route: Health
   app.get("/api/health", (req, res) => {
@@ -224,19 +314,154 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
   });
 }
 
-  // API Route: Gemini Multilingual Complaint Classification Pipeline
+  // API Route: Gemini Multilingual Complaint Classification Pipeline & Duplicate Detection & Vision Analysis
   app.post("/api/classify", async (req, res) => {
     try {
-      const { submissionId, docId, text, country, district } = req.body;
+      const { submissionId, docId, text, country, district, photo_url } = req.body || {};
       const targetId = submissionId || docId || "";
 
-      const complaintText = text || "Road crater causing traffic stoppage";
-      const complaintCountry = country || "India";
-      const complaintDistrict = district || "General District";
+      // Initialize Firestore if available
+      let submissionData: any = null;
+      let dbInstance: any = null;
+      try {
+        const { initializeApp, getApps, getApp } = await import("firebase/app");
+        const { getFirestore, doc, getDoc } = await import("firebase/firestore");
+        const firebaseConfig = {
+          apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
+          projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
+        };
+        const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+        dbInstance = getFirestore(fbApp);
 
-      // If circuit breaker is cooling down or API key is absent, use high-speed heuristic classifier
+        if (targetId && dbInstance) {
+          const docSnap = await getDoc(doc(dbInstance, "submissions", targetId));
+          if (docSnap.exists()) {
+            submissionData = docSnap.data();
+          }
+        }
+      } catch (dbInitErr) {
+        console.warn("Firestore server-init notice in classify:", dbInitErr);
+      }
+
+      const complaintText = submissionData?.text || text || "Road crater causing traffic stoppage";
+      const complaintCountry = submissionData?.country || country || "India";
+      const complaintDistrict = submissionData?.district || district || "General District";
+      const complaintPhotoUrl = submissionData?.photo_url || photo_url || req.body?.photo_url || "";
+
       const apiKey = process.env.GEMINI_API_KEY || "";
-      if (!apiKey || Date.now() < geminiQuotaCooldownUntil) {
+      const canUseGemini = Boolean(apiKey) && Date.now() >= geminiQuotaCooldownUntil;
+
+      // ─────────────────────────────────────────────────────────────
+      // STEP 1.5: DUPLICATE DETECTION (Gemini AI)
+      // ─────────────────────────────────────────────────────────────
+      if (dbInstance && complaintDistrict && canUseGemini) {
+        try {
+          const { collection, query, where, orderBy, limit, getDocs, updateDoc, doc, increment } = await import("firebase/firestore");
+          
+          let recentDocs: any = null;
+          try {
+            recentDocs = await getDocs(
+              query(
+                collection(dbInstance, "submissions"),
+                where("district", "==", complaintDistrict),
+                where("status", "!=", "pending"),
+                orderBy("created_at", "desc"),
+                limit(50)
+              )
+            );
+          } catch (qErr) {
+            // Fallback if composite index is pending
+            recentDocs = await getDocs(
+              query(
+                collection(dbInstance, "submissions"),
+                where("district", "==", complaintDistrict),
+                limit(50)
+              )
+            );
+          }
+
+          if (recentDocs && !recentDocs.empty) {
+            const recentTexts = recentDocs.docs
+              .filter((d: any) => d.id !== targetId && d.data().status !== "duplicate")
+              .map((d: any) => ({
+                id: d.id,
+                text: d.data().summary_english || d.data().text || "",
+                category: d.data().category,
+              }))
+              .filter((r: any) => Boolean(r.text));
+
+            if (recentTexts.length > 0) {
+              const ai = new GoogleGenAI({
+                apiKey,
+                httpOptions: {
+                  headers: {
+                    "User-Agent": "aistudio-build",
+                  },
+                },
+              });
+
+              const dupCheckPrompt = `You are a duplicate detection system for a civic complaint platform. Check if the new complaint is a duplicate of any existing complaint in the same district.
+
+New complaint: "${complaintText}"
+
+Existing complaints in same district:
+${recentTexts.slice(0, 20).map((r: any, i: number) => `${i + 1}. [${r.id}] "${r.text}"`).join("\n")}
+
+Return JSON:
+{
+  "is_duplicate": boolean,
+  "duplicate_of_id": "id string or null",
+  "confidence": 0.0-1.0,
+  "reason": "brief explanation"
+}`;
+
+              const dupResult = await ai.models.generateContent({
+                model: "gemini-3.7-flash",
+                contents: dupCheckPrompt,
+                config: {
+                  responseMimeType: "application/json",
+                  maxOutputTokens: 200,
+                },
+              });
+
+              const dupData = JSON.parse(dupResult.text || "{}");
+
+              if (dupData.is_duplicate && Number(dupData.confidence) > 0.8) {
+                // Mark as duplicate, increment original upvotes
+                if (targetId) {
+                  try {
+                    await updateDoc(doc(dbInstance, "submissions", targetId), {
+                      status: "duplicate",
+                      duplicate_of: dupData.duplicate_of_id || null,
+                      duplicate_confidence: dupData.confidence,
+                    });
+                    if (dupData.duplicate_of_id) {
+                      await updateDoc(doc(dbInstance, "submissions", dupData.duplicate_of_id), {
+                        upvotes: increment(1),
+                      });
+                    }
+                  } catch (uErr) {
+                    console.warn("Error updating duplicate doc:", uErr);
+                  }
+                }
+
+                return res.json({
+                  success: true,
+                  status: "duplicate",
+                  original_id: dupData.duplicate_of_id || null,
+                  duplicate_confidence: dupData.confidence,
+                  reason: dupData.reason,
+                });
+              }
+            }
+          }
+        } catch (dupErr) {
+          console.warn("Duplicate detection notice:", dupErr);
+        }
+      }
+
+      // If circuit breaker is cooling down or API key is absent, use rule-based classifier
+      if (!canUseGemini) {
         const ruleClass = ruleBasedClassify(complaintText, complaintDistrict, complaintCountry);
         return res.json({
           success: true,
@@ -331,6 +556,92 @@ Return this exact JSON structure:
           keywords: Array.isArray(parsed.keywords) ? parsed.keywords : ["infrastructure"],
         };
 
+        const dept = getDepartmentForCategory(classification.category);
+        const updateData: Record<string, any> = {
+          category: classification.category,
+          urgency: classification.urgency,
+          summary_english: classification.summary_english,
+          language: classification.language_detected,
+          status: "classified",
+          department_id: dept.id,
+          department_name: dept.shortName,
+          sla_deadline: getSLADeadline(classification.category, new Date()).toISOString(),
+          sla_status: "on_track",
+        };
+
+        // ─────────────────────────────────────────────────────────────
+        // STEP 2: PHOTO ANALYSIS (Gemini Vision)
+        // ─────────────────────────────────────────────────────────────
+        if (complaintPhotoUrl) {
+          try {
+            const imageRes = await fetch(complaintPhotoUrl);
+            if (imageRes.ok) {
+              const imageBuffer = await imageRes.arrayBuffer();
+              const base64Image = Buffer.from(imageBuffer).toString("base64");
+              const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+
+              const visionResult = await ai.models.generateContent({
+                model: "gemini-3.7-flash",
+                contents: [
+                  {
+                    role: "user",
+                    parts: [
+                      {
+                        inlineData: {
+                          mimeType: contentType,
+                          data: base64Image,
+                        },
+                      },
+                      {
+                        text: `Analyze this photo of a civic infrastructure problem. Return JSON:
+{
+  "photo_description": "One sentence describing what is visible",
+  "severity": "low|medium|high|critical",
+  "infrastructure_type": "road|water|electricity|building|other",
+  "estimated_affected_area_meters": number,
+  "safety_hazard": boolean,
+  "confidence": 0.0-1.0
+}`,
+                      },
+                    ],
+                  },
+                ],
+                config: {
+                  responseMimeType: "application/json",
+                  maxOutputTokens: 300,
+                },
+              });
+
+              const photoData = JSON.parse(visionResult.text || "{}");
+
+              // If photo shows a safety hazard, boost urgency
+              if (photoData.safety_hazard && classification.urgency < 4) {
+                classification.urgency = 4;
+              }
+
+              // Add photo analysis to the update
+              Object.assign(updateData, {
+                photo_description: photoData.photo_description,
+                photo_severity: photoData.severity,
+                photo_safety_hazard: Boolean(photoData.safety_hazard),
+                ai_confidence: typeof photoData.confidence === "number" ? photoData.confidence : 0.9,
+              });
+            }
+          } catch (photoErr) {
+            console.warn("Photo analysis failed, continuing:", photoErr);
+          }
+        }
+
+        // Persist enriched updates to Firestore
+        if (targetId && dbInstance) {
+          try {
+            const { updateDoc, doc } = await import("firebase/firestore");
+            await updateDoc(doc(dbInstance, "submissions", targetId), updateData);
+          } catch (upDocErr) {
+            console.warn("Firestore classify doc update notice:", upDocErr);
+          }
+        }
+
         return res.json({
           success: true,
           submissionId: targetId,
@@ -339,6 +650,10 @@ Return this exact JSON structure:
           summary_english: classification.summary_english,
           language_detected: classification.language_detected,
           keywords: classification.keywords,
+          photo_description: updateData.photo_description,
+          photo_severity: updateData.photo_severity,
+          photo_safety_hazard: updateData.photo_safety_hazard,
+          ai_confidence: updateData.ai_confidence,
           classification,
         });
       } catch (geminiError: any) {
@@ -375,6 +690,40 @@ Return this exact JSON structure:
         keywords: fallbackResult.keywords,
         classification: fallbackResult,
       });
+    }
+  });
+
+  // API Route: Direct / Background Sync Submissions
+  app.post("/api/submit", async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const { initializeApp, getApps, getApp } = await import("firebase/app");
+      const { getFirestore, collection, addDoc } = await import("firebase/firestore");
+      const firebaseConfig = {
+        apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
+        projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
+      };
+      const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+      const dbInstance = getFirestore(fbApp);
+
+      const docRef = await addDoc(collection(dbInstance, "submissions"), {
+        ...payload,
+        created_at: payload.created_at || new Date().toISOString(),
+        status: payload.status || "pending",
+        source: payload.source || "web",
+      });
+
+      // Trigger background classification
+      fetch(`http://localhost:${PORT}/api/classify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: docRef.id }),
+      }).catch(() => {});
+
+      return res.json({ success: true, id: docRef.id });
+    } catch (err: any) {
+      console.error("Submit API error:", err);
+      return res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -588,6 +937,163 @@ Return as JSON array of objects.`;
       });
     }
   });
+
+  // ─── WhatsApp Webhook Verification (GET) ────────────────
+  app.get("/api/whatsapp/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    if (
+      mode === "subscribe" &&
+      token === (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "nagarvaani_webhook_2026")
+    ) {
+      console.log("WhatsApp webhook verified");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  });
+
+  // ─── WhatsApp Incoming Message Handler (POST) ───────────
+  app.post("/api/whatsapp/webhook", async (req, res) => {
+    res.sendStatus(200); // Always respond 200 immediately
+
+    try {
+      const body = req.body;
+      if (!body?.entry?.[0]?.changes?.[0]?.value?.messages) return;
+
+      const msg = body.entry[0].changes[0].value.messages[0];
+      const from = msg.from; // WhatsApp phone number
+      const msgType = msg.type; // text, image, audio, location
+
+      let complaintText = "";
+      let photoUrl = "";
+      let lat = 20.5937;
+      let lng = 78.9629;
+
+      if (msgType === "text") {
+        complaintText = msg.text?.body || "";
+      } else if (msgType === "image") {
+        // Download image from WhatsApp
+        const mediaId = msg.image?.id;
+        if (mediaId && process.env.WHATSAPP_ACCESS_TOKEN) {
+          try {
+            const mediaRes = await fetch(
+              `https://graph.facebook.com/v18.0/${mediaId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                },
+              }
+            );
+            const mediaData: any = await mediaRes.json();
+            photoUrl = mediaData.url || "";
+          } catch (mErr) {
+            console.warn("Failed to fetch WhatsApp media metadata:", mErr);
+          }
+        }
+        complaintText = msg.image?.caption || "Photo complaint";
+      } else if (msgType === "audio") {
+        complaintText = "[Voice message received — being transcribed]";
+      } else if (msgType === "location") {
+        lat = msg.location?.latitude || 20.5937;
+        lng = msg.location?.longitude || 78.9629;
+        complaintText = `Location pin reported at ${lat}, ${lng}`;
+      }
+
+      if (!complaintText && !photoUrl) return;
+
+      const submission = {
+        text: complaintText,
+        language: "auto",
+        category: "other",
+        urgency: 3,
+        summary_english: complaintText.slice(0, 100),
+        district: "Unknown",
+        state: "Unknown",
+        country: "India",
+        lat,
+        lng,
+        photo_url: photoUrl,
+        created_at: new Date().toISOString(),
+        status: "pending",
+        source: "whatsapp",
+        whatsapp_from: from,
+      };
+
+      let docId = `WA-${Date.now().toString(36).toUpperCase()}`;
+
+      try {
+        const { initializeApp, getApps, getApp } = await import("firebase/app");
+        const { getFirestore, collection: col, addDoc } = await import("firebase/firestore");
+
+        const firebaseConfig = {
+          apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
+          projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
+        };
+
+        const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+        const db = getFirestore(fbApp);
+        const docRef = await addDoc(col(db, "submissions"), submission);
+        docId = docRef.id;
+      } catch (dbErr) {
+        console.warn("Firestore save via WhatsApp webhook notice:", dbErr);
+      }
+
+      const trackingId = `NV-${docId.slice(0, 6).toUpperCase()}`;
+
+      // Trigger classification in background
+      fetch(`http://localhost:${PORT}/api/classify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: docId }),
+      }).catch(() => {});
+
+      // Send acknowledgement back to citizen via WhatsApp
+      if (from) {
+        await sendWhatsAppMessage(
+          from,
+          `✅ *NagarVaani* has received your report!\n\n` +
+            `🔖 *Tracking ID:* ${trackingId}\n` +
+            `📍 Track your complaint at:\n` +
+            `${process.env.APP_URL || "https://nagarvaani.com"}/?track=${trackingId}\n\n` +
+            `_Your report will be reviewed by policymakers. ` +
+            `Thank you for making your community better! 🏛️_`
+        );
+      }
+    } catch (err) {
+      console.error("WhatsApp webhook error:", err);
+    }
+  });
+
+  // Helper function to send WhatsApp messages
+  async function sendWhatsAppMessage(to: string, text: string) {
+    if (!process.env.WHATSAPP_PHONE_NUMBER_ID || !process.env.WHATSAPP_ACCESS_TOKEN) {
+      console.log(`[WhatsApp Message Dispatch (Config pending)] To: ${to} | Text: ${text.slice(0, 60)}...`);
+      return;
+    }
+    try {
+      await fetch(
+        `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to,
+            type: "text",
+            text: { body: text },
+          }),
+        }
+      );
+    } catch (waSendErr) {
+      console.error("WhatsApp message send error:", waSendErr);
+    }
+  }
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

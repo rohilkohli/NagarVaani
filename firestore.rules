@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // SUBMISSIONS — citizens can create, anyone can read 
+    // classified ones, only server can update
+    match /submissions/{submissionId} {
+      // Anyone can read classified submissions (for community tab)
+      allow read: if resource.data.status != 'pending';
+      
+      // Anyone can create (no auth required for citizen portal)
+      // but enforce required fields and field limits
+      allow create: if
+        request.resource.data.keys().hasAll([
+          'text', 'category', 'country', 'district', 
+          'lat', 'lng', 'status', 'created_at'
+        ]) &&
+        request.resource.data.text is string &&
+        request.resource.data.text.size() <= 1000 &&
+        request.resource.data.category in [
+          'roads','water','electricity',
+          'sanitation','health','education','other'
+        ] &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.urgency is int &&
+        request.resource.data.urgency >= 1 &&
+        request.resource.data.urgency <= 5;
+      
+      // Only authenticated admin users can update status
+      // (server-side calls bypass these rules, which is correct)
+      allow update: if request.auth != null && 
+        request.auth.token.admin == true;
+      
+      // No deletes from client
+      allow delete: if false;
+    }
+
+    // UPVOTES — track per-user upvotes to prevent duplicates
+    match /upvotes/{upvoteId} {
+      allow read: if true;
+      allow create: if 
+        request.resource.data.submissionId is string &&
+        request.resource.data.ip is string;
+      allow update, delete: if false;
+    }
+    
+    // ADMIN USERS collection
+    match /admin_users/{userId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
+    }
+
+    // Default: deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

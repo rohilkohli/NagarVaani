@@ -16,8 +16,20 @@ export interface Submission {
   lng: number;
   photo_url?: string;
   created_at: Date;
-  status: 'pending' | 'classified' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority';
+  status: 'pending' | 'classified' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority' | 'duplicate';
   upvotes?: number;
+  source?: 'web' | 'whatsapp' | 'voice' | 'api' | string;
+  whatsapp_from?: string;
+  duplicate_of?: string;
+  duplicate_confidence?: number;
+  photo_description?: string;
+  photo_severity?: 'low' | 'medium' | 'high' | 'critical';
+  photo_safety_hazard?: boolean;
+  ai_confidence?: number;
+  department_id?: string;
+  department_name?: string;
+  sla_deadline?: string | Date;
+  sla_status?: 'on_track' | 'at_risk' | 'breached' | string;
 }
 
 export interface PriorityRecommendation {

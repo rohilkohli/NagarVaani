@@ -70,7 +70,54 @@ VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_GOOGLE_MAPS_API_KEY= # From Google Cloud Console
+WHATSAPP_PHONE_NUMBER_ID= # Meta Business WhatsApp Cloud API
+WHATSAPP_ACCESS_TOKEN=    # Meta Cloud API System User Token
+WHATSAPP_WEBHOOK_VERIFY_TOKEN= # e.g. nagarvaani_webhook_2026
+META_APP_SECRET=          # Meta App Secret
 ```
+
+---
+
+## WhatsApp Integration Setup
+1. Create Meta Business account at business.facebook.com
+2. Create an app → Add WhatsApp product
+3. Get a test phone number from Meta
+4. Set webhook URL: `{YOUR_CLOUD_RUN_URL}/api/whatsapp/webhook`
+5. Set verify token: `nagarvaani_webhook_2026`
+6. Subscribe to: `messages`, `message_deliveries`
+7. Add env vars: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `META_APP_SECRET`
+8. Citizens can now report by WhatsApp to your number!
+
+---
+
+## Deploy to Cloud Run
+
+### Prerequisites
+- Google Cloud SDK installed
+- Docker Desktop running  
+- Project with billing enabled
+
+### One-command deploy:
+```bash
+# Login to Google Cloud
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable run.googleapis.com \
+  cloudbuild.googleapis.com \
+  containerregistry.googleapis.com
+
+# Store secrets
+echo -n "$GEMINI_API_KEY" | \
+  gcloud secrets create GEMINI_API_KEY --data-file=-
+
+# Deploy
+bash deploy.sh
+```
+
+The script outputs your live Cloud Run URL.
+Update APP_URL in Cloud Run env vars to that URL.
 
 ---
 

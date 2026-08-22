@@ -30,6 +30,7 @@ import { Submission, ComplaintCategory } from "@/lib/types";
 import { db, storage } from "@/lib/firebase";
 import { collection, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { queueOfflineSubmission } from "@/lib/offlineQueue";
 import VoiceInput from "@/components/citizen/VoiceInput";
 import NearYouPanel from "@/components/citizen/NearYouPanel";
 import CommunityTab from "@/components/citizen/CommunityTab";
@@ -193,6 +194,7 @@ export default function CitizenPage({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submissionSuccessId, setSubmissionSuccessId] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [isSavedOffline, setIsSavedOffline] = useState<boolean>(false);
 
   const QUICK_PROMPTS = [
     { label: t("roads", "Broken road"), icon: Compass, text: "Severe potholes and damaged asphalt causing hazardous road conditions." },
@@ -390,6 +392,46 @@ export default function CitizenPage({
         status: "classified",
       };
 
+      // Offline detection & queueing
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const submissionPayload = {
+          text: newRecord.text,
+          category: newRecord.category,
+          country: newRecord.country,
+          district: newRecord.district,
+          lat: newRecord.lat,
+          lng: newRecord.lng,
+          status: "pending",
+          urgency: newRecord.urgency,
+          created_at: newRecord.created_at.toISOString(),
+          language: newRecord.language,
+          summary_english: newRecord.summary_english,
+          state: newRecord.state,
+          photo_url: newRecord.photo_url || null,
+        };
+
+        await queueOfflineSubmission(submissionPayload);
+
+        if ("serviceWorker" in navigator) {
+          try {
+            const sw = await navigator.serviceWorker.ready;
+            if ((sw as any).sync) {
+              await (sw as any).sync.register("sync-submissions");
+            }
+          } catch (syncErr) {
+            console.log("Background sync notice:", syncErr);
+          }
+        }
+
+        setIsSavedOffline(true);
+        setSubmissionSuccessId(newRecord.id);
+        if (onNewSubmission) {
+          onNewSubmission(newRecord);
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
       // 4. Save to Firestore
       try {
         const docRef = await addDoc(collection(db, "submissions"), {
@@ -414,6 +456,7 @@ export default function CitizenPage({
         console.warn("Firestore save notice:", dbErr);
       }
 
+      setIsSavedOffline(false);
       setSubmissionSuccessId(newRecord.id);
 
       if (onNewSubmission) {
@@ -466,8 +509,54 @@ export default function CitizenPage({
       status: "classified",
     };
 
+    // Offline detection & queueing for quick mode
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const submissionPayload = {
+        text: descriptionText,
+        category: quickCategory || "other",
+        country,
+        district: locationLabel,
+        lat: finalLat,
+        lng: finalLng,
+        status: "pending",
+        urgency: 3,
+        created_at: new Date().toISOString(),
+        language: "Detected",
+        summary_english: descriptionText,
+        state: country === "India" ? state : "",
+        photo_url: photoPreview || null,
+      };
+
+      try {
+        await queueOfflineSubmission(submissionPayload);
+
+        if ("serviceWorker" in navigator) {
+          try {
+            const sw = await navigator.serviceWorker.ready;
+            if ((sw as any).sync) {
+              await (sw as any).sync.register("sync-submissions");
+            }
+          } catch (syncErr) {
+            console.log("Background sync notice:", syncErr);
+          }
+        }
+      } catch (qErr) {
+        console.warn("Offline queue notice:", qErr);
+      }
+
+      setDistrict(locationLabel);
+      setIsSavedOffline(true);
+      setSubmissionSuccessId(newRecord.id);
+      if (onNewSubmission) {
+        onNewSubmission(newRecord);
+      }
+      setIsSubmitting(false);
+      return;
+    }
+
     // 1. Show success immediately to the user (instant <30s response)
     setDistrict(locationLabel);
+    setIsSavedOffline(false);
     setSubmissionSuccessId(newRecord.id);
     if (onNewSubmission) {
       onNewSubmission(newRecord);
@@ -556,6 +645,7 @@ export default function CitizenPage({
     handleRemovePhoto();
     setSubmissionSuccessId(null);
     setSubmissionError(null);
+    setIsSavedOffline(false);
     setLocationError("");
     setLocationSuccessMsg(null);
     setDetectedCoords(null);
@@ -722,8 +812,15 @@ export default function CitizenPage({
             {/* Success Headlines */}
             <div className="space-y-2">
               <h2 className="text-[24px] font-bold text-[var(--text-primary)] tracking-tight">
-                {t("reportSubmitted", "Report Submitted!")}
+                {isSavedOffline ? "Saved for Submission!" : t("reportSubmitted", "Report Submitted!")}
               </h2>
+
+              {isSavedOffline && (
+                <div className="p-3.5 rounded-[12px] bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[13px] font-semibold flex items-center justify-center gap-2 max-w-sm mx-auto">
+                  <span>✅ Saved offline! Will submit automatically when you reconnect.</span>
+                </div>
+              )}
+
               <div className="p-4 rounded-[12px] bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/20 max-w-sm mx-auto space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--brand-primary)] block">
                   {t("trackingReference", "TRACKING REFERENCE")}
@@ -739,7 +836,9 @@ export default function CitizenPage({
                 </p>
               </div>
               <p className="text-[13px] text-[var(--text-secondary)] pt-2">
-                {t("reviewedNotice", "Your report will be reviewed within 48 hours")}
+                {isSavedOffline
+                  ? "Your report is queued in local browser storage and will be synchronized when network is restored."
+                  : t("reviewedNotice", "Your report will be reviewed within 48 hours")}
               </p>
             </div>
 
@@ -751,36 +850,50 @@ export default function CitizenPage({
             />
 
             {/* Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button
-                type="button"
-                id="btn-track-report-success"
-                onClick={() => {
-                  if (onNavigateToTrack && submissionSuccessId) {
-                    onNavigateToTrack(submissionSuccessId);
-                  } else if (typeof window !== "undefined") {
-                    window.location.href = `/?track=${encodeURIComponent(submissionSuccessId || "")}`;
-                  }
-                }}
-                className="w-full sm:w-auto h-11 px-6 rounded-[12px] text-white text-[14px] font-semibold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-md hover:opacity-95 select-none bg-[#6366f1] hover:bg-[#4f46e5]"
+            <div className="flex flex-col items-center justify-center gap-3 pt-2 max-w-md mx-auto">
+              <a
+                id="btn-share-whatsapp-success"
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `I just reported a civic issue on NagarVaani! Track ID: ${submissionSuccessId || ""} - ${typeof window !== "undefined" ? window.location.origin : ""}/?track=${submissionSuccessId || ""}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#25D366] text-white font-semibold text-[15px] hover:bg-[#20bd5a] transition-colors shadow-md select-none cursor-pointer"
               >
-                <Search className="w-4 h-4" />
-                <span>{t("trackThisReport", "Track this report")}</span>
-              </button>
+                <span>💬</span> Share on WhatsApp
+              </a>
 
-              <button
-                type="button"
-                onClick={handleResetForm}
-                className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer shadow-2xs select-none"
-              >
-                {t("submitAnother", "Submit another report")}
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full">
+                <button
+                  type="button"
+                  id="btn-track-report-success"
+                  onClick={() => {
+                    if (onNavigateToTrack && submissionSuccessId) {
+                      onNavigateToTrack(submissionSuccessId);
+                    } else if (typeof window !== "undefined") {
+                      window.location.href = `/?track=${encodeURIComponent(submissionSuccessId || "")}`;
+                    }
+                  }}
+                  className="w-full sm:flex-1 h-11 px-4 rounded-[12px] text-white text-[14px] font-semibold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-md hover:opacity-95 select-none bg-[#6366f1] hover:bg-[#4f46e5]"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>{t("trackThisReport", "Track this report")}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="w-full sm:flex-1 h-11 px-4 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer shadow-2xs select-none"
+                >
+                  {t("submitAnother", "Submit another report")}
+                </button>
+              </div>
 
               {onNavigateToDashboard && (
                 <button
                   type="button"
                   onClick={onNavigateToDashboard}
-                  className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none"
+                  className="w-full h-11 px-6 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none"
                 >
                   <span>{t("dashboard", "Dashboard")}</span>
                   <ArrowRight className="w-4 h-4" />

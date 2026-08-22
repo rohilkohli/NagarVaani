@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PriorityRecommendation, Submission } from "@/lib/types";
+import { getSLAStatus } from "@/lib/departments";
 
 interface PriorityPanelProps {
   submissions?: Submission[];
@@ -294,6 +295,12 @@ export default function PriorityPanel({
     return recommendations.filter((r) => r.category.toLowerCase() === filterCategory.toLowerCase());
   }, [recommendations, filterCategory]);
 
+  const breachedCount = useMemo(() => {
+    return submissions.filter(
+      (s) => getSLAStatus(s.category, new Date(s.created_at), s.status) === "breached"
+    ).length;
+  }, [submissions]);
+
   return (
     <div
       className={`bg-[var(--bg-surface)] border border-[var(--border-base)] rounded-[var(--radius-md)] flex flex-col h-[480px] overflow-hidden shadow-sm transition-all hover:border-[var(--border-strong)] ${className}`}
@@ -329,6 +336,23 @@ export default function PriorityPanel({
           <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-[var(--brand-secondary)]" : ""}`} />
         </button>
       </div>
+
+      {/* SLA BREACH ALERT BANNER (If breachedCount > 0) */}
+      {breachedCount > 0 && (
+        <div className="p-3 pb-1 border-b border-[var(--border-dim)] bg-[var(--bg-base)]/50">
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
+            <span className="text-red-500 text-[16px]">🚨</span>
+            <div>
+              <p className="text-[12px] font-bold text-red-500">
+                {breachedCount} SLA Breaches
+              </p>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                {breachedCount} complaints exceeded resolution deadline
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QUICK FILTER CHIPS */}
       <div className="px-3 py-2 border-b border-[var(--border-dim)] bg-[var(--bg-base)]/40 flex items-center gap-1 overflow-x-auto no-scrollbar">
