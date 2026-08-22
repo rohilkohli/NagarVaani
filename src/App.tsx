@@ -26,6 +26,7 @@ export default function App() {
   });
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Sync tab with browser URL history
   const handleSelectTab = (tab: NavTab) => {
@@ -69,6 +70,8 @@ export default function App() {
       if (typeof window !== "undefined") {
         localStorage.setItem('nv_seeded', 'true');
       }
+      setToastMsg("✅ Demo data loaded — 50 submissions seeded");
+      setTimeout(() => setToastMsg(null), 4000);
     } catch (e) {
       console.error("Error refreshing demo data:", e);
     }
@@ -96,6 +99,8 @@ export default function App() {
     if (!hasSeeded) {
       handleSeedData().then(() => {
         localStorage.setItem('nv_seeded', 'true');
+        setToastMsg("✅ Demo data loaded — 50 submissions seeded");
+        setTimeout(() => setToastMsg(null), 4000);
       });
     }
   }, []);
@@ -211,8 +216,8 @@ export default function App() {
         </div>
       )}
 
-      {/* MAIN CONTENT WORKSPACE */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* MAIN CONTENT WORKSPACE (Offset by 220px on desktop) */}
+      <div className="flex-1 flex flex-col min-w-0 md:pl-[220px]">
         {/* PERSISTENT TOP HEADER */}
         <Header
           activeTab={activeTab}
@@ -245,6 +250,13 @@ export default function App() {
             </div>
           </div>
         </footer>
+
+        {/* SEED CONFIRMATION TOAST */}
+        {toastMsg && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[13px] text-[var(--text-primary)] font-medium shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            {toastMsg}
+          </div>
+        )}
       </div>
     </div>
   );

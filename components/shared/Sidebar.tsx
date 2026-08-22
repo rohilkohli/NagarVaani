@@ -30,6 +30,7 @@ export default function Sidebar({
   const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "heatmap", label: "Heatmap", icon: Map },
+    { id: "priority", label: "AI Priorities", icon: Sparkles },
     { id: "brics", label: "BRICS View", icon: Globe2 },
     { id: "reports", label: "All Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings },

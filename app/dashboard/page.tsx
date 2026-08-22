@@ -198,6 +198,10 @@ export default function DashboardPage({
     return filteredTableSubmissions.slice(start, start + itemsPerPage);
   }, [filteredTableSubmissions, currentPage]);
 
+  if (activeTab === "priority") {
+    return <PriorityRankingsView submissions={submissions} />;
+  }
+
   return (
     <div key={activeTab} className="page-transition-enter space-y-6 select-none" id="dashboard-page-container">
       {/* Toast Notification */}
@@ -270,17 +274,7 @@ export default function DashboardPage({
       )}
 
       {/* ========================================================================= */}
-      {/* 3. AI PRIORITIES TAB (EXECUTIVE INTELLIGENCE VIEW) */}
-      {/* ========================================================================= */}
-      {activeTab === "priority" && (
-        <PriorityRankingsView
-          submissions={submissions}
-          isLoading={isLoading}
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* 4. BRICS VIEW TAB */}
+      {/* 3. BRICS VIEW TAB */}
       {/* ========================================================================= */}
       {activeTab === "brics" && (
         <div className="space-y-4">
