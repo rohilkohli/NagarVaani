@@ -133,7 +133,7 @@ export default function DemandHeatmap({
   const mapsKey =
     import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
     (typeof window !== "undefined" && ((window as any).__ENV?.VITE_GOOGLE_MAPS_API_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY || (window as any).NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)) ||
-    "";
+    "AIzaSyDeh5qMcJgn5Rlxs0oYT8PCFKvICz7YoI0";
   const hasMapsKey = Boolean(mapsKey && mapsKey.length > 10);
 
   useEffect(() => {

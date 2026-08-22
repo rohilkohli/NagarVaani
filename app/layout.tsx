@@ -1,5 +1,7 @@
 import React from "react";
 import "@/src/index.css";
+import { ThemeProvider } from "@/lib/themeContext";
+import { LanguageProvider } from "@/lib/languageContext";
 
 export const metadata = {
   title: "NagarVaani — Infrastructure Intelligence Platform",
@@ -14,7 +16,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-[var(--bg-base)] text-[var(--text-primary)] min-h-screen antialiased">
-        {children}
+        <ThemeProvider>
+          <LanguageProvider>
+            {children}
+          </LanguageProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

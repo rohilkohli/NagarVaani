@@ -240,20 +240,16 @@ export default function VoiceInput({
               id="hero-voice-button"
               disabled={disabled}
               onClick={handleStartRecording}
-              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 disabled:opacity-50 select-none"
-              style={{
-                background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                boxShadow: "0 8px 32px rgba(99, 102, 241, 0.4)",
-              }}
+              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 disabled:opacity-50 select-none bg-[#6366f1] hover:bg-[#4f46e5] shadow-lg shadow-[#6366f1]/30"
               title="Tap to speak in any language"
             >
               <Mic className="w-8 h-8 text-white" />
             </button>
             <div className="space-y-0.5">
-              <span className="text-[14px] font-semibold text-[#1c1917] block">
+              <span className="text-[14px] font-semibold text-[var(--text-primary)] block">
                 Tap to speak in any language
               </span>
-              <span className="text-[12px] text-[#78716c] block">
+              <span className="text-[12px] text-[var(--text-secondary)] block">
                 Hindi, Tamil, Marathi, Russian, Portuguese, etc.
               </span>
             </div>
@@ -266,20 +262,16 @@ export default function VoiceInput({
               type="button"
               id="hero-voice-button-recording"
               onClick={handleStopRecording}
-              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 select-none"
-              style={{
-                background: "linear-gradient(135deg, #ef4444, #f87171)",
-                boxShadow: "0 0 0 8px rgba(239, 68, 68, 0.15), 0 0 0 16px rgba(239, 68, 68, 0.07)",
-              }}
+              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 select-none bg-red-600 hover:bg-red-700 ring-8 ring-red-500/20"
               title="Tap to finish recording"
             >
               <div className="w-6 h-6 rounded-[4px] bg-white animate-pulse" />
             </button>
             <div className="space-y-0.5">
-              <span className="text-[14px] font-bold text-[#ef4444] block">
+              <span className="text-[14px] font-bold text-red-500 block">
                 Listening... Tap when finished
               </span>
-              <span className="text-[12px] text-[#78716c] block">
+              <span className="text-[12px] text-[var(--text-secondary)] block">
                 AI transcribes and summarizes automatically
               </span>
             </div>
@@ -289,11 +281,7 @@ export default function VoiceInput({
         {recordState === "processing" && (
           <div className="flex flex-col items-center text-center space-y-2 py-2">
             <div
-              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white select-none"
-              style={{
-                background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                boxShadow: "0 4px 20px rgba(99, 102, 241, 0.25)",
-              }}
+              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white select-none bg-[#6366f1] shadow-lg shadow-[#6366f1]/25"
             >
               <Loader2 className="w-8 h-8 text-white animate-spin" />
             </div>
@@ -306,16 +294,16 @@ export default function VoiceInput({
         {recordState === "done" && (
           <div className="flex flex-col items-center text-center space-y-2">
             <div className="flex items-center gap-2">
-              <div className="h-10 px-4 rounded-full bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-[13px] font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-[#059669]" />
+              <div className="h-10 px-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[13px] font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 <span>Voice Transcribed</span>
               </div>
               <button
                 type="button"
                 onClick={handleReset}
-                className="h-10 px-3.5 rounded-full border border-[#e5e4e0] bg-[#ffffff] hover:bg-[#f5f5f4] text-[#44403c] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                className="h-10 px-3.5 rounded-full border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-[#78716c]" />
+                <RotateCcw className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                 <span>Speak Again</span>
               </button>
             </div>
@@ -323,7 +311,7 @@ export default function VoiceInput({
         )}
       </div>
 
-      {/* WAVEFORM VISUALIZER (24 bars in a row, 40px tall, indigo -> violet gradient) */}
+      {/* WAVEFORM VISUALIZER (24 bars in a row, 40px tall) */}
       <div className="w-full flex flex-col items-center justify-center pt-1">
         <div className="flex items-end justify-center gap-[3px] h-[40px] w-full max-w-[280px]">
           {audioBars.map((height, idx) => (
@@ -342,7 +330,7 @@ export default function VoiceInput({
 
       {/* ERROR NOTICE */}
       {errorMessage && (
-        <div className="p-3 rounded-[12px] bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] text-[13px] flex items-start gap-2">
+        <div className="p-3 rounded-[12px] bg-red-500/10 border border-red-500/25 text-red-600 dark:text-red-400 text-[13px] flex items-start gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
@@ -350,30 +338,23 @@ export default function VoiceInput({
 
       {/* TRANSCRIPTION RESULT BOX */}
       {(englishTranslation || originalText) && (
-        <div
-          className="rounded-[10px] space-y-1.5 animate-in fade-in duration-200"
-          style={{
-            background: "#f5f5ff",
-            borderLeft: "3px solid #6366f1",
-            padding: "12px 16px",
-          }}
-        >
+        <div className="rounded-[10px] space-y-1.5 p-3.5 bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/20 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[#6366f1] bg-[#ffffff] px-2 py-0.5 rounded-[4px] border border-[#e0e7ff]">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[#6366f1] bg-[var(--bg-surface)] px-2 py-0.5 rounded-[4px] border border-[var(--border-dim)]">
               <Globe className="w-3 h-3" />
               {languageDetected || "Detected Language"}
             </span>
-            <span className="text-[11px] font-medium text-[#059669]">
+            <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
               ✓ Populated in form
             </span>
           </div>
 
-          <p className="text-[14px] text-[#1c1917] font-medium leading-relaxed">
+          <p className="text-[14px] text-[var(--text-primary)] font-medium leading-relaxed">
             "{englishTranslation || originalText}"
           </p>
 
           {originalText && originalText !== englishTranslation && (
-            <p className="text-[12px] text-[#78716c] italic leading-relaxed pt-1 border-t border-[#e0e7ff]">
+            <p className="text-[12px] text-[var(--text-secondary)] italic leading-relaxed pt-1 border-t border-[var(--brand-primary)]/15">
               Original: "{originalText}"
             </p>
           )}

@@ -8,11 +8,13 @@ import CitizenPage from "@/app/citizen/page";
 import TrackComplaint from "@/components/citizen/TrackComplaint";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, onSnapshot } from "firebase/firestore";
 import { useTheme } from "@/lib/themeContext";
+import { Submission, ComplaintCategory } from "@/lib/types";
 
 export default function App() {
   const { theme } = useTheme();
+  const [liveSubmissions, setLiveSubmissions] = useState<Submission[]>([]);
   const [currentTrackId, setCurrentTrackId] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
@@ -95,8 +97,51 @@ export default function App() {
     }
   };
 
+  // Real-time Firestore sync
+  useEffect(() => {
+    try {
+      const unsubscribe = onSnapshot(
+        collection(db, "submissions"),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const data: Submission[] = snapshot.docs.map((docSnap) => {
+              const d = docSnap.data();
+              return {
+                id: d.id || `NV-${docSnap.id.slice(0, 6).toUpperCase()}`,
+                firestoreId: docSnap.id,
+                text: d.text || "",
+                language: d.language || "English",
+                category: (d.category as ComplaintCategory) || "roads",
+                urgency: (d.urgency as 1 | 2 | 3 | 4 | 5) || 3,
+                summary_english: d.summary_english || d.text || "",
+                district: d.district || "District",
+                state: d.state || "",
+                country: d.country || "India",
+                lat: d.lat || 20.5937,
+                lng: d.lng || 78.9629,
+                photo_url: d.photo_url || undefined,
+                created_at: d.created_at ? new Date(d.created_at) : new Date(),
+                status: (d.status as Submission["status"]) || "classified",
+                upvotes: Number(d.upvotes) || 0,
+              };
+            });
+            setLiveSubmissions(data);
+          } else {
+            setLiveSubmissions([]);
+          }
+        },
+        (err) => {
+          console.warn("Notice: Firestore subscription in App:", err);
+        }
+      );
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn("Firestore listener initialization note:", e);
+    }
+  }, []);
+
   const handleExportCSV = () => {
-    const data = ALL_SEED_SUBMISSIONS;
+    const data = liveSubmissions.length > 0 ? liveSubmissions : ALL_SEED_SUBMISSIONS;
 
     const headers = [
       'ID', 'Category', 'District', 'State', 'Country',
@@ -123,11 +168,11 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `nagarvaani-submissions-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `nagarvaani-live-submissions-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 
-    setToastMsg("📥 CSV exported successfully");
+    setToastMsg(`📥 Exported ${data.length} live records to CSV`);
     setTimeout(() => setToastMsg(null), 3000);
   };
 

@@ -15,6 +15,16 @@ import {
   Camera,
   Zap,
   FileText,
+  Search,
+  Users,
+  Compass,
+  Droplets,
+  Trash2,
+  HeartPulse,
+  MapPin,
+  Check,
+  Crosshair,
+  Navigation,
 } from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { db, storage } from "@/lib/firebase";
@@ -23,7 +33,10 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import VoiceInput from "@/components/citizen/VoiceInput";
 import NearYouPanel from "@/components/citizen/NearYouPanel";
 import CommunityTab from "@/components/citizen/CommunityTab";
+import RealCitizenMap from "@/components/citizen/RealCitizenMap";
 import ThemeToggle from "@/components/shared/ThemeToggle";
+import { useLanguage, SUPPORTED_LANGUAGES, LanguageCode } from "@/lib/languageContext";
+import { COUNTRIES_DATA, getStatesForCountry, getDistrictsForState, detectLocationFromGPS, getLocationCoordinates } from "@/lib/locations";
 
 interface CitizenPageProps {
   onNewSubmission?: (sub: Submission) => void;
@@ -31,68 +44,12 @@ interface CitizenPageProps {
   onNavigateToTrack?: (trackingId: string) => void;
 }
 
-const INDIAN_STATES = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-];
-
 const BRICS_COUNTRIES = [
   { id: "India", name: "India", flag: "🇮🇳", lat: 20.5937, lng: 78.9629 },
   { id: "Brazil", name: "Brazil", flag: "🇧🇷", lat: -14.235, lng: -51.9253 },
   { id: "Russia", name: "Russia", flag: "🇷🇺", lat: 61.524, lng: 105.3188 },
-  { id: "South Africa", name: "S. Africa", flag: "🇿🇦", lat: -30.5595, lng: 22.9375 },
+  { id: "South Africa", name: "South Africa", flag: "🇿🇦", lat: -30.5595, lng: 22.9375 },
   { id: "China", name: "China", flag: "🇨🇳", lat: 35.8617, lng: 104.1954 },
-];
-
-const QUICK_PROMPTS = [
-  { label: "🛣️ Broken road", text: "Severe potholes and damaged asphalt causing hazardous road conditions." },
-  { label: "💧 No water supply", text: "No municipal tap water supply for past 3 days in our residential area." },
-  { label: "⚡ Power cuts", text: "Frequent unscheduled electricity blackouts and voltage fluctuations." },
-  { label: "🚽 Blocked drain", text: "Blocked municipal sewage drain overflowing on street causing health risks." },
-];
-
-const QUICK_CHIPS: { label: string; word: string; category: ComplaintCategory }[] = [
-  { label: "Road", word: "Road", category: "roads" },
-  { label: "Water", word: "Water", category: "water" },
-  { label: "Electric", word: "Electric", category: "electricity" },
-  { label: "Drain", word: "Drain", category: "sanitation" },
-  { label: "Other", word: "Other", category: "other" },
-];
-
-const LANGUAGES = [
-  { code: "en", name: "English", flag: "🌐" },
-  { code: "hi", name: "हिन्दी (Hindi)", flag: "🇮🇳" },
-  { code: "ta", name: "தமிழ் (Tamil)", flag: "🇮🇳" },
-  { code: "mr", name: "मराठी (Marathi)", flag: "🇮🇳" },
-  { code: "pt", name: "Português", flag: "🇧🇷" },
-  { code: "ru", name: "Русский", flag: "🇷🇺" },
-  { code: "zh", name: "中文", flag: "🇨🇳" },
 ];
 
 export default function CitizenPage({
@@ -100,6 +57,8 @@ export default function CitizenPage({
   onNavigateToDashboard,
   onNavigateToTrack,
 }: CitizenPageProps) {
+  const { language, setLanguage, currentLangOption, t } = useLanguage();
+
   // Mode selection (Quick Report vs Full Report)
   const [citizenTab, setCitizenTab] = useState<"report" | "community">("report");
   const [reportMode, setReportMode] = useState<"quick" | "full">(() => {
@@ -119,7 +78,6 @@ export default function CitizenPage({
   };
 
   // Top bar language selector state
-  const [currentLang, setCurrentLang] = useState<{ code: string; name: string; flag: string }>(LANGUAGES[0]);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState<boolean>(false);
 
   // SECTION 1: Location States
@@ -127,6 +85,90 @@ export default function CitizenPage({
   const [state, setState] = useState<string>("Maharashtra");
   const [district, setDistrict] = useState<string>("");
   const [locationError, setLocationError] = useState<string>("");
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [detectedCoords, setDetectedCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationSuccessMsg, setLocationSuccessMsg] = useState<string | null>(null);
+
+  // States list dynamically loaded for selected country
+  const availableStates = useMemo(() => {
+    return getStatesForCountry(country);
+  }, [country]);
+
+  // District suggestions dynamically loaded for selected country and state
+  const sampleDistricts = useMemo(() => {
+    return getDistrictsForState(country, state);
+  }, [country, state]);
+
+  const handleCountryChange = (newCountry: string) => {
+    setCountry(newCountry);
+    const newStates = getStatesForCountry(newCountry);
+    if (newStates.length > 0) {
+      setState(newStates[0]);
+    } else {
+      setState("");
+    }
+    setDistrict("");
+    setLocationError("");
+    setLocationSuccessMsg(null);
+    setDetectedCoords(null);
+  };
+
+  // Detect location handler using Geolocation API
+  const handleDetectLocation = async () => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationError("");
+    setLocationSuccessMsg(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          setDetectedCoords({ lat: latitude, lng: longitude });
+
+          const result = await detectLocationFromGPS(latitude, longitude);
+          if (result) {
+            setCountry(result.country);
+            if (result.state) {
+              setState(result.state);
+            }
+            if (result.district) {
+              setDistrict(result.district);
+              setQuickLandmark(result.district);
+            }
+            setLocationSuccessMsg(
+              `GPS Auto-detected: ${result.district || result.state}, ${result.country}`
+            );
+          }
+        } catch {
+          setLocationError("Could not resolve location address from GPS coordinates.");
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (err) => {
+        setIsLocating(false);
+        if (err.code === 1) {
+          setLocationError("Location permission denied. Please allow location access or pick manually.");
+        } else if (err.code === 2) {
+          setLocationError("Location position unavailable. Please try again or select manually.");
+        } else if (err.code === 3) {
+          setLocationError("Location request timed out. Please try again.");
+        } else {
+          setLocationError("Could not retrieve current location. Please select manually.");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  };
 
   // SECTION 2: Voice & Text States
   const [detectedLanguage, setDetectedLanguage] = useState<string>("English");
@@ -151,6 +193,21 @@ export default function CitizenPage({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submissionSuccessId, setSubmissionSuccessId] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  const QUICK_PROMPTS = [
+    { label: t("roads", "Broken road"), icon: Compass, text: "Severe potholes and damaged asphalt causing hazardous road conditions." },
+    { label: t("water", "No water supply"), icon: Droplets, text: "No municipal tap water supply for past 3 days in our residential area." },
+    { label: t("electricity", "Power cuts"), icon: Zap, text: "Frequent unscheduled electricity blackouts and voltage fluctuations." },
+    { label: t("sanitation", "Blocked drain"), icon: Trash2, text: "Blocked municipal sewage drain overflowing on street causing health risks." },
+  ];
+
+  const QUICK_CHIPS: { label: string; word: string; category: ComplaintCategory }[] = [
+    { label: t("roads", "Road"), word: "Road", category: "roads" },
+    { label: t("water", "Water"), word: "Water", category: "water" },
+    { label: t("electricity", "Electric"), word: "Electric", category: "electricity" },
+    { label: t("sanitation", "Drain"), word: "Drain", category: "sanitation" },
+    { label: t("other", "Other"), word: "Other", category: "other" },
+  ];
 
   // Step indicator calculation
   const currentStep = useMemo(() => {
@@ -310,12 +367,10 @@ export default function CitizenPage({
         console.warn("Gemini classify notice:", err);
       }
 
-      // 3. Approximate coordinates for mapping
-      const countryMeta = BRICS_COUNTRIES.find((c) => c.name === country) || BRICS_COUNTRIES[0];
-      const randomOffsetLat = (Math.random() - 0.5) * 4;
-      const randomOffsetLng = (Math.random() - 0.5) * 4;
-      const finalLat = Number((countryMeta.lat + randomOffsetLat).toFixed(4));
-      const finalLng = Number((countryMeta.lng + randomOffsetLng).toFixed(4));
+      // 3. Accurate coordinates for mapping & GIS analytics
+      const geoCoords = detectedCoords || getLocationCoordinates(country, state, district);
+      const finalLat = Number(geoCoords.lat.toFixed(4));
+      const finalLng = Number(geoCoords.lng.toFixed(4));
 
       const trackingCode = `NV-${Date.now().toString().slice(-6)}`;
       const newRecord: Submission = {
@@ -338,6 +393,7 @@ export default function CitizenPage({
       // 4. Save to Firestore
       try {
         const docRef = await addDoc(collection(db, "submissions"), {
+          id: trackingCode,
           text: newRecord.text,
           language: newRecord.language,
           category: newRecord.category,
@@ -351,8 +407,9 @@ export default function CitizenPage({
           photo_url: newRecord.photo_url || null,
           created_at: newRecord.created_at.toISOString(),
           status: newRecord.status,
+          upvotes: 0,
         });
-        newRecord.id = `NV-${docRef.id.slice(0, 6).toUpperCase()}`;
+        newRecord.firestoreId = docRef.id;
       } catch (dbErr) {
         console.warn("Firestore save notice:", dbErr);
       }
@@ -383,12 +440,10 @@ export default function CitizenPage({
 
     setIsSubmitting(true);
 
-    const locationLabel = quickLandmark.trim() || "Local Area";
-    const selectedCountryMeta = BRICS_COUNTRIES.find((c) => c.name === country) || BRICS_COUNTRIES[0];
-    const randomOffsetLat = (Math.random() - 0.5) * 2;
-    const randomOffsetLng = (Math.random() - 0.5) * 2;
-    const finalLat = Number((selectedCountryMeta.lat + randomOffsetLat).toFixed(4));
-    const finalLng = Number((selectedCountryMeta.lng + randomOffsetLng).toFixed(4));
+    const locationLabel = quickLandmark.trim() || district || "Local Area";
+    const geoCoords = detectedCoords || getLocationCoordinates(country, state, locationLabel);
+    const finalLat = Number(geoCoords.lat.toFixed(4));
+    const finalLng = Number(geoCoords.lng.toFixed(4));
 
     const trackingCode = `NV-${Date.now().toString().slice(-6)}`;
     const descriptionText =
@@ -465,6 +520,7 @@ export default function CitizenPage({
         // Firestore document creation
         try {
           const docRef = await addDoc(collection(db, "submissions"), {
+            id: trackingCode,
             text: newRecord.text,
             language: newRecord.language,
             category: newRecord.category,
@@ -478,8 +534,9 @@ export default function CitizenPage({
             photo_url: finalPhotoUrl || null,
             created_at: newRecord.created_at.toISOString(),
             status: newRecord.status,
+            upvotes: 0,
           });
-          newRecord.id = `NV-${docRef.id.slice(0, 6).toUpperCase()}`;
+          newRecord.firestoreId = docRef.id;
         } catch (dbErr) {
           console.warn("Firestore save notice:", dbErr);
         }
@@ -500,6 +557,8 @@ export default function CitizenPage({
     setSubmissionSuccessId(null);
     setSubmissionError(null);
     setLocationError("");
+    setLocationSuccessMsg(null);
+    setDetectedCoords(null);
     setTextError("");
   };
 
@@ -532,7 +591,7 @@ export default function CitizenPage({
             </span>
           </div>
 
-          {/* Center: Tabs [📝 Report] [📍 Community] */}
+          {/* Center: Tabs [Report] [Community] */}
           <div className="flex items-center gap-1 bg-[var(--bg-elevated)] p-1 rounded-[10px] border border-[var(--border-dim)]">
             <button
               type="button"
@@ -544,8 +603,8 @@ export default function CitizenPage({
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
-              <span>📝</span>
-              <span>Report</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>{t("report", "Report")}</span>
             </button>
             <button
               type="button"
@@ -557,8 +616,8 @@ export default function CitizenPage({
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
-              <span>📍</span>
-              <span>Community</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>{t("community", "Community")}</span>
             </button>
           </div>
 
@@ -567,35 +626,41 @@ export default function CitizenPage({
             {/* Theme Toggle Button */}
             <ThemeToggle id="citizen-header-theme-toggle" />
 
-            {/* Language Selector Dropdown */}
+            {/* Instant Language Selector Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsLangDropdownOpen((prev) => !prev)}
                 className="h-8 px-2.5 rounded-[8px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
               >
-                <span>{currentLang.flag}</span>
-                <span className="hidden sm:inline">{currentLang.name}</span>
+                <span>{currentLangOption.flag}</span>
+                <span className="hidden sm:inline font-semibold">{currentLangOption.name}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[var(--text-tertiary)]" />
               </button>
 
               {isLangDropdownOpen && (
-                <div className="absolute right-0 mt-1 w-44 rounded-[10px] bg-[var(--bg-surface)] border border-[var(--border-base)] shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  {LANGUAGES.map((lang) => (
+                <div className="absolute right-0 mt-1 w-48 rounded-[10px] bg-[var(--bg-surface)] border border-[var(--border-base)] shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-150 max-h-72 overflow-y-auto">
+                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-dim)]">
+                    {t("selectLanguage", "Select Language")}
+                  </div>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
                     <button
                       key={lang.code}
                       onClick={() => {
-                        setCurrentLang(lang);
+                        setLanguage(lang.code as LanguageCode);
                         setIsLangDropdownOpen(false);
                       }}
-                      className={`w-full px-3 py-1.5 text-left text-[12px] flex items-center gap-2 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer ${
-                        currentLang.code === lang.code
+                      className={`w-full px-3 py-2 text-left text-[12px] flex items-center justify-between hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer ${
+                        language === lang.code
                           ? "font-bold text-[#6366f1] bg-[var(--brand-subtle)]"
                           : "text-[var(--text-primary)]"
                       }`}
                     >
-                      <span>{lang.flag}</span>
-                      <span>{lang.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{lang.flag}</span>
+                        <span>{lang.nativeName}</span>
+                      </div>
+                      {language === lang.code && <Check className="w-3.5 h-3.5 text-[#6366f1]" />}
                     </button>
                   ))}
                 </div>
@@ -607,9 +672,10 @@ export default function CitizenPage({
               <button
                 type="button"
                 onClick={onNavigateToDashboard}
-                className="h-8 px-2 sm:px-2.5 rounded-[8px] text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                className="h-8 px-2 sm:px-2.5 rounded-[8px] text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer flex items-center gap-1"
               >
-                Dashboard →
+                <span>{t("dashboard", "Dashboard")}</span>
+                <ArrowRight className="w-3 h-3" />
               </button>
             )}
           </div>
@@ -627,7 +693,7 @@ export default function CitizenPage({
             onNavigateToTrack={onNavigateToTrack}
           />
         ) : submissionSuccessId ? (
-          <div className="bg-[#ffffff] rounded-[16px] border border-[#e5e4e0] p-6 sm:p-8 text-center space-y-6 shadow-sm animate-in fade-in duration-300">
+          <div className="bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)] p-6 sm:p-8 text-center space-y-6 shadow-sm animate-in fade-in duration-300">
             {/* 7. SUBMISSION SUCCESS SELF-DRAWING SVG CHECKMARK */}
             <div className="flex justify-center">
               <div className="w-24 h-24 rounded-full flex items-center justify-center p-2">
@@ -639,7 +705,7 @@ export default function CitizenPage({
                     fill="none"
                     strokeWidth="4"
                     strokeLinecap="round"
-                    className="animate-success-circle"
+                    className="animate-success-circle stroke-[#6366f1]"
                   />
                   <path
                     d="M30 52 L44 66 L70 36"
@@ -647,7 +713,7 @@ export default function CitizenPage({
                     strokeWidth="5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="animate-success-check"
+                    className="animate-success-check stroke-[#6366f1]"
                   />
                 </svg>
               </div>
@@ -655,29 +721,29 @@ export default function CitizenPage({
 
             {/* Success Headlines */}
             <div className="space-y-2">
-              <h2 className="text-[24px] font-bold text-[#1c1917] tracking-tight">
-                Report Submitted!
+              <h2 className="text-[24px] font-bold text-[var(--text-primary)] tracking-tight">
+                {t("reportSubmitted", "Report Submitted!")}
               </h2>
-              <div className="p-4 rounded-[12px] bg-[#f5f5ff] border border-[#e0e7ff] max-w-sm mx-auto space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#6366f1] block">
-                  TRACKING REFERENCE
+              <div className="p-4 rounded-[12px] bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/20 max-w-sm mx-auto space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--brand-primary)] block">
+                  {t("trackingReference", "TRACKING REFERENCE")}
                 </span>
-                <span className="font-mono text-[20px] font-bold text-[#6366f1] select-all block">
+                <span className="font-mono text-[20px] font-bold text-[var(--brand-primary)] select-all block">
                   {submissionSuccessId}
                 </span>
-                <span className="text-[12px] text-[#78716c] block">
-                  Location: {district}, {country}
+                <span className="text-[12px] text-[var(--text-secondary)] block">
+                  {t("location", "Location")}: {district || state}, {country}
                 </span>
-                <p className="text-[11px] text-[#6366f1] font-medium pt-1.5 border-t border-[#e0e7ff] mt-1">
-                  Bookmark this page to track your complaint status
+                <p className="text-[11px] text-[var(--brand-primary)] font-medium pt-1.5 border-t border-[var(--brand-primary)]/20 mt-1">
+                  {t("bookmarkNotice", "Bookmark this page to track your complaint status")}
                 </p>
               </div>
-              <p className="text-[13px] text-[#78716c] pt-2">
-                Your report will be reviewed within 48 hours
+              <p className="text-[13px] text-[var(--text-secondary)] pt-2">
+                {t("reviewedNotice", "Your report will be reviewed within 48 hours")}
               </p>
             </div>
 
-            {/* PART 1 — Post-submission "Near You" panel */}
+            {/* Post-submission "Near You" panel */}
             <NearYouPanel
               district={district}
               country={country}
@@ -696,29 +762,27 @@ export default function CitizenPage({
                     window.location.href = `/?track=${encodeURIComponent(submissionSuccessId || "")}`;
                   }
                 }}
-                className="w-full sm:w-auto h-11 px-6 rounded-[12px] text-white text-[14px] font-semibold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-md hover:opacity-95 select-none"
-                style={{
-                  background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                }}
+                className="w-full sm:w-auto h-11 px-6 rounded-[12px] text-white text-[14px] font-semibold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-md hover:opacity-95 select-none bg-[#6366f1] hover:bg-[#4f46e5]"
               >
-                <span>🔍 Track this report</span>
+                <Search className="w-4 h-4" />
+                <span>{t("trackThisReport", "Track this report")}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleResetForm}
-                className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[#e5e4e0] bg-[#ffffff] hover:bg-[#f5f5f4] text-[#1c1917] text-[14px] font-semibold transition-colors cursor-pointer shadow-2xs select-none"
+                className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer shadow-2xs select-none"
               >
-                Submit another report
+                {t("submitAnother", "Submit another report")}
               </button>
 
               {onNavigateToDashboard && (
                 <button
                   type="button"
                   onClick={onNavigateToDashboard}
-                  className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[#e5e4e0] bg-[#fafaf9] hover:bg-[#f5f5f4] text-[#44403c] text-[14px] font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none"
+                  className="w-full sm:w-auto h-11 px-6 rounded-[12px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] text-[14px] font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none"
                 >
-                  <span>Dashboard</span>
+                  <span>{t("dashboard", "Dashboard")}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
@@ -730,20 +794,20 @@ export default function CitizenPage({
             {/* HEADER SECTION (above form cards) */}
             <div className="space-y-2">
               <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#6366f1] block">
-                NAGARVAANI • CITIZEN PORTAL
+                NAGARVAANI • {t("citizenPortal", "CITIZEN PORTAL")}
               </span>
-              <h1 className="text-[32px] font-bold tracking-[-0.02em] leading-[1.2] text-[#1c1917]">
-                Report an Infrastructure Problem
+              <h1 className="text-[32px] font-bold tracking-[-0.02em] leading-[1.2] text-[var(--text-primary)]">
+                {t("reportInfrastructureProblem", "Report an Infrastructure Problem")}
               </h1>
-              <p className="text-[15px] text-[#78716c]">
-                Your voice shapes national priorities
+              <p className="text-[15px] text-[var(--text-secondary)]">
+                {t("voiceShapesPriorities", "Your voice shapes national priorities")}
               </p>
               {/* Decorative thin indigo line (2px × 40px) */}
               <div className="w-[40px] h-[2px] rounded-full bg-[#6366f1] mt-2" />
             </div>
 
             {/* STEP INDICATOR: Horizontal progress dots (① Where → ② What happened → ③ Submit) */}
-            <div className="bg-[#ffffff] rounded-[12px] border border-[#e5e4e0] p-3 px-4 flex items-center justify-between shadow-2xs">
+            <div className="bg-[var(--bg-surface)] rounded-[12px] border border-[var(--border-dim)] p-3 px-4 flex items-center justify-between shadow-2xs">
               {/* Step 1 */}
               <div className="flex items-center gap-2">
                 <div
@@ -757,14 +821,14 @@ export default function CitizenPage({
                 </div>
                 <span
                   className={`text-[12px] font-medium hidden sm:inline ${
-                    currentStep >= 1 ? "text-[#1c1917] font-semibold" : "text-[#78716c]"
+                    currentStep >= 1 ? "text-[var(--text-primary)] font-semibold" : "text-[var(--text-secondary)]"
                   }`}
                 >
-                  Where
+                  {t("where", "Where")}
                 </span>
               </div>
 
-              <div className="flex-1 h-[1px] bg-[#e5e4e0] mx-3" />
+              <div className="flex-1 h-[1px] bg-[var(--border-dim)] mx-3" />
 
               {/* Step 2 */}
               <div className="flex items-center gap-2">
@@ -774,21 +838,21 @@ export default function CitizenPage({
                       ? "bg-[#6366f1] text-white"
                       : currentStep === 2
                       ? "bg-[#6366f1] text-white ring-2 ring-[#6366f1]/20"
-                      : "bg-[#f5f5f4] text-[#78716c] border border-[#e5e4e0]"
+                      : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-dim)]"
                   }`}
                 >
                   {currentStep > 2 ? "✓" : "2"}
                 </div>
                 <span
                   className={`text-[12px] font-medium hidden sm:inline ${
-                    currentStep >= 2 ? "text-[#1c1917] font-semibold" : "text-[#78716c]"
+                    currentStep >= 2 ? "text-[var(--text-primary)] font-semibold" : "text-[var(--text-secondary)]"
                   }`}
                 >
-                  What happened
+                  {t("whatHappened", "What happened")}
                 </span>
               </div>
 
-              <div className="flex-1 h-[1px] bg-[#e5e4e0] mx-3" />
+              <div className="flex-1 h-[1px] bg-[var(--border-dim)] mx-3" />
 
               {/* Step 3 */}
               <div className="flex items-center gap-2">
@@ -796,24 +860,24 @@ export default function CitizenPage({
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
                     currentStep === 3
                       ? "bg-[#6366f1] text-white ring-2 ring-[#6366f1]/20"
-                      : "bg-[#f5f5f4] text-[#78716c] border border-[#e5e4e0]"
+                      : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-dim)]"
                   }`}
                 >
                   3
                 </div>
                 <span
                   className={`text-[12px] font-medium hidden sm:inline ${
-                    currentStep === 3 ? "text-[#1c1917] font-semibold" : "text-[#78716c]"
+                    currentStep === 3 ? "text-[var(--text-primary)] font-semibold" : "text-[var(--text-secondary)]"
                   }`}
                 >
-                  Submit
+                  {t("submit", "Submit")}
                 </span>
               </div>
             </div>
 
             {/* Error Notification */}
             {submissionError && (
-              <div className="p-3.5 rounded-[12px] bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] text-[13px] flex items-center justify-between gap-3">
+              <div className="p-3.5 rounded-[12px] bg-red-500/10 border border-red-500/25 text-red-600 dark:text-red-400 text-[13px] flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{submissionError}</span>
@@ -823,26 +887,26 @@ export default function CitizenPage({
                   onClick={() => (reportMode === "quick" ? handleQuickSubmit() : handleSubmit())}
                   className="text-[12px] font-semibold underline cursor-pointer"
                 >
-                  Retry
+                  {t("retry", "Retry")}
                 </button>
               </div>
             )}
 
             {/* MODE TOGGLE ROW */}
-            <div className="flex items-center justify-center p-1 bg-[#f5f5f4] border border-[#e5e4e0] rounded-[14px] max-w-sm mx-auto shadow-2xs">
+            <div className="flex items-center justify-center p-1 bg-[var(--bg-elevated)] border border-[var(--border-dim)] rounded-[14px] max-w-sm mx-auto shadow-2xs">
               <button
                 type="button"
                 id="btn-mode-quick-report"
                 onClick={() => handleSetReportMode("quick")}
                 className={`flex-1 h-9 rounded-[10px] text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer select-none ${
                   reportMode === "quick"
-                    ? "bg-white text-[#6366f1] shadow-2xs border border-[#e0e7ff]"
-                    : "text-[#78716c] hover:text-[#1c1917]"
+                    ? "bg-[var(--bg-surface)] text-[#6366f1] shadow-2xs border border-[var(--border-dim)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
               >
-                <span>⚡</span>
-                <span>Quick Report</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[#f5f5ff] text-[#6366f1] font-mono font-bold hidden sm:inline">&lt;30s</span>
+                <Zap className="w-3.5 h-3.5" />
+                <span>{t("quickReport", "Quick Report")}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[var(--brand-subtle)] text-[#6366f1] font-mono font-bold hidden sm:inline">&lt;30s</span>
               </button>
               <button
                 type="button"
@@ -850,12 +914,12 @@ export default function CitizenPage({
                 onClick={() => handleSetReportMode("full")}
                 className={`flex-1 h-9 rounded-[10px] text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer select-none ${
                   reportMode === "full"
-                    ? "bg-white text-[#6366f1] shadow-2xs border border-[#e0e7ff]"
-                    : "text-[#78716c] hover:text-[#1c1917]"
+                    ? "bg-[var(--bg-surface)] text-[#6366f1] shadow-2xs border border-[var(--border-dim)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
               >
-                <span>📋</span>
-                <span>Full Report</span>
+                <FileText className="w-3.5 h-3.5" />
+                <span>{t("fullReport", "Full Report")}</span>
               </button>
             </div>
 
@@ -864,15 +928,32 @@ export default function CitizenPage({
               /* QUICK REPORT MODE (Single Card) */
               /* ========================================================================= */
               <form onSubmit={handleQuickSubmit} className="space-y-4">
-                <div className="bg-[#ffffff] border border-[#e5e4e0] rounded-[16px] p-5 sm:p-6 space-y-5 shadow-2xs transition-all duration-200">
+                <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[16px] p-5 sm:p-6 space-y-5 shadow-2xs transition-all duration-200">
                   
-                  {/* TOP: Location (Country selector flags + Landmark input) */}
+                  {/* TOP: Location (Country selector flags + State dropdown for all countries + Landmark input) */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[12px] font-semibold text-[#78716c] uppercase tracking-[0.05em] block">
-                        Select Country
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-[0.05em] block">
+                        {t("selectCountry", "Select Country")}
                       </label>
-                      <span className="text-[11px] font-medium text-[#6366f1]">Tap flag to switch</span>
+                      <button
+                        type="button"
+                        onClick={handleDetectLocation}
+                        disabled={isLocating}
+                        className="px-2.5 py-1 rounded-[7px] bg-[var(--brand-subtle)] hover:bg-[#6366f1]/20 text-[#6366f1] border border-[#6366f1]/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-all duration-150 disabled:opacity-50"
+                      >
+                        {isLocating ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>{t("locating", "Detecting...")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Crosshair className="w-3 h-3" />
+                            <span>{t("detectMyLocation", "Detect my location")}</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
                     {/* 5 Country flags */}
@@ -883,17 +964,17 @@ export default function CitizenPage({
                           <button
                             key={c.id}
                             type="button"
-                            onClick={() => setCountry(c.name)}
+                            onClick={() => handleCountryChange(c.name)}
                             className={`h-[54px] rounded-[10px] flex flex-col items-center justify-center transition-all duration-150 cursor-pointer select-none ${
                               isSelected
-                                ? "bg-[#f5f5ff] border-2 border-[#6366f1] shadow-2xs"
-                                : "bg-[#ffffff] border border-[#e5e4e0] hover:bg-[#fafaf9]"
+                                ? "bg-[var(--brand-subtle)] border-2 border-[#6366f1] shadow-2xs"
+                                : "bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:bg-[var(--bg-elevated)]"
                             }`}
                           >
                             <span className="text-[20px] leading-none mb-0.5">{c.flag}</span>
                             <span
                               className={`text-[9px] uppercase font-bold tracking-tight truncate w-full px-1 text-center ${
-                                isSelected ? "text-[#6366f1]" : "text-[#78716c]"
+                                isSelected ? "text-[#6366f1]" : "text-[var(--text-secondary)]"
                               }`}
                             >
                               {c.name}
@@ -903,26 +984,71 @@ export default function CitizenPage({
                       })}
                     </div>
 
+                    {/* State selection for ALL countries */}
+                    {availableStates.length > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <label htmlFor="quick-state-select" className="text-[12px] font-semibold text-[var(--text-secondary)]">
+                          {t("stateProvince", "State / Province")} ({country})
+                        </label>
+                        <select
+                          id="quick-state-select"
+                          value={state}
+                          onChange={(e) => setState(e.target.value)}
+                          className="w-full h-10 rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] px-3 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all cursor-pointer"
+                        >
+                          {availableStates.map((st) => (
+                            <option key={st} value={st} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     {/* Area / landmark text input */}
                     <div className="space-y-1 pt-1">
-                      <label htmlFor="quick-landmark-input" className="text-[12px] font-semibold text-[#78716c]">
-                        Your area / landmark
+                      <label htmlFor="quick-landmark-input" className="text-[12px] font-semibold text-[var(--text-secondary)]">
+                        {t("yourAreaLandmark", "Your area / landmark / district")}
                       </label>
                       <input
                         id="quick-landmark-input"
                         type="text"
-                        placeholder="e.g. Near Rajiv Chowk, Delhi"
+                        placeholder="e.g. Near Market Square, Main Street..."
                         value={quickLandmark}
                         onChange={(e) => setQuickLandmark(e.target.value)}
-                        className="w-full h-11 rounded-[10px] border border-[#e5e4e0] bg-[#fafaf9] px-3.5 text-[15px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] focus:bg-[#ffffff] transition-all"
+                        className="w-full h-11 rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] px-3.5 text-[15px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all"
+                      />
+                    </div>
+
+                    {/* Quick Mode Real Interactive Map */}
+                    <div className="pt-1">
+                      <RealCitizenMap
+                        country={country}
+                        state={state}
+                        district={district}
+                        landmark={quickLandmark}
+                        customCoords={detectedCoords}
+                        onCoordinatesChange={(coords) => setDetectedCoords(coords)}
+                        onDistrictDetected={(res) => {
+                          if (res.country) setCountry(res.country);
+                          if (res.state) setState(res.state);
+                          if (res.district) {
+                            setDistrict(res.district);
+                            setQuickLandmark(res.district);
+                          }
+                        }}
+                        isLocating={isLocating}
+                        onDetectLocation={handleDetectLocation}
+                        showNearbyReports={true}
+                        height="200px"
                       />
                     </div>
                   </div>
 
-                  {/* MIDDLE: Large camera/upload button (full-width, 120px tall) */}
+                  {/* MIDDLE: Large camera/upload button */}
                   <div className="space-y-2">
-                    <label className="text-[12px] font-semibold text-[#78716c] uppercase tracking-[0.05em] block">
-                      Photo Evidence (Recommended)
+                    <label className="text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-[0.05em] block">
+                      {t("photoEvidence", "Photo Evidence (Recommended)")}
                     </label>
 
                     {/* Hidden Camera File Input */}
@@ -944,24 +1070,24 @@ export default function CitizenPage({
                         onDrop={handleDrop}
                         className={`h-[120px] w-full rounded-[12px] border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 select-none ${
                           isDragging
-                            ? "border-[#6366f1] bg-[#f5f5ff]"
-                            : "border-[#d4d4d4] bg-[#fafaf9] hover:border-[#6366f1] hover:bg-[#f5f5ff]"
+                            ? "border-[#6366f1] bg-[var(--brand-subtle)]"
+                            : "border-[var(--border-base)] bg-[var(--bg-elevated)] hover:border-[#6366f1] hover:bg-[var(--brand-subtle)]"
                         }`}
                       >
                         <div className="flex flex-col items-center justify-center space-y-1.5 p-3">
-                          <div className="w-10 h-10 rounded-full bg-[#f5f5ff] text-[#6366f1] flex items-center justify-center shadow-2xs">
+                          <div className="w-10 h-10 rounded-full bg-[var(--brand-subtle)] text-[#6366f1] flex items-center justify-center shadow-2xs">
                             <Camera className="w-5 h-5" />
                           </div>
-                          <div className="text-[14px] font-semibold text-[#1c1917]">
-                            📷 Tap to photograph the problem
+                          <div className="text-[14px] font-semibold text-[var(--text-primary)]">
+                            {t("tapToPhotograph", "Tap to photograph the problem")}
                           </div>
-                          <div className="text-[11px] text-[#78716c]">
-                            Direct camera on mobile, file upload on desktop
+                          <div className="text-[11px] text-[var(--text-secondary)]">
+                            {t("directCameraMobile", "Direct camera on mobile, file upload on desktop")}
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="relative rounded-[10px] overflow-hidden border border-[#e5e4e0] bg-[#fafaf9] max-h-[160px] flex items-center justify-center">
+                      <div className="relative rounded-[10px] overflow-hidden border border-[var(--border-dim)] bg-[var(--bg-elevated)] max-h-[160px] flex items-center justify-center">
                         <img
                           src={photoPreview}
                           alt="Problem Evidence"
@@ -974,7 +1100,7 @@ export default function CitizenPage({
                           className="absolute top-2 right-2 px-2.5 py-1 rounded-full bg-black/70 hover:bg-black text-white text-[11px] font-medium flex items-center gap-1 backdrop-blur-xs cursor-pointer shadow-md transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
-                          <span>Change Photo</span>
+                          <span>{t("changePhoto", "Change Photo")}</span>
                         </button>
                       </div>
                     )}
@@ -984,13 +1110,13 @@ export default function CitizenPage({
                     )}
                   </div>
 
-                  {/* BELOW PHOTO: Single textarea (2 rows) + Quick Chips */}
+                  {/* BELOW PHOTO: Single textarea + Quick Chips */}
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <label htmlFor="quick-text-input" className="text-[12px] font-semibold text-[#78716c]">
-                        Describe in one line — any language
+                      <label htmlFor="quick-text-input" className="text-[12px] font-semibold text-[var(--text-secondary)]">
+                        {t("describeOneLine", "Describe in one line — any language")}
                       </label>
-                      <span className="text-[11px] font-mono text-[#78716c]">
+                      <span className="text-[11px] font-mono text-[var(--text-secondary)]">
                         {quickText.length} / 200
                       </span>
                     </div>
@@ -999,19 +1125,19 @@ export default function CitizenPage({
                       id="quick-text-input"
                       rows={2}
                       maxLength={200}
-                      placeholder="Describe in one line — any language"
+                      placeholder={t("describeOneLine", "Describe in one line — any language")}
                       value={quickText}
                       onChange={(e) => {
                         setQuickText(e.target.value);
                         setQuickError("");
                       }}
-                      className="w-full rounded-[10px] border border-[#e5e4e0] bg-[#fafaf9] p-3 text-[15px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] focus:bg-[#ffffff] transition-all resize-none leading-normal"
+                      className="w-full rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] p-3 text-[15px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all resize-none leading-normal"
                     />
 
-                    {/* Quick chip buttons: [Road] [Water] [Electric] [Drain] [Other] */}
+                    {/* Quick chip buttons */}
                     <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-semibold text-[#78716c] uppercase tracking-[0.05em] block">
-                        Quick Category:
+                      <span className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-[0.05em] block">
+                        {t("quickCategory", "Quick Category")}:
                       </span>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {QUICK_CHIPS.map((chip) => {
@@ -1024,7 +1150,7 @@ export default function CitizenPage({
                               className={`px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all duration-150 cursor-pointer select-none ${
                                 isSelected
                                   ? "bg-[#6366f1] text-white shadow-2xs"
-                                  : "bg-[#fafaf9] border border-[#e5e4e0] text-[#44403c] hover:bg-[#f5f5ff] hover:border-[#6366f1]/40"
+                                  : "bg-[var(--bg-elevated)] border border-[var(--border-dim)] text-[var(--text-primary)] hover:bg-[var(--brand-subtle)] hover:border-[#6366f1]/40"
                               }`}
                             >
                               {chip.label}
@@ -1045,20 +1171,17 @@ export default function CitizenPage({
                       type="submit"
                       id="btn-quick-submit"
                       disabled={isSubmitting}
-                      className="w-full h-[52px] rounded-[12px] text-white text-[16px] font-semibold flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer disabled:opacity-50 select-none hover:-translate-y-[0.5px] active:translate-y-0 shadow-lg"
-                      style={{
-                        background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                        boxShadow: "0 4px 20px rgba(99, 102, 241, 0.35)",
-                      }}
+                      className="w-full h-[52px] rounded-[12px] text-white text-[16px] font-semibold flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer disabled:opacity-50 select-none bg-[#6366f1] hover:bg-[#4f46e5] shadow-lg shadow-[#6366f1]/25"
                     >
                       {isSubmitting ? (
                         <>
                           <Loader2 className="w-5 h-5 animate-spin text-white" />
-                          <span>Submitting Report...</span>
+                          <span>{t("submittingReport", "Submitting Report...")}</span>
                         </>
                       ) : (
                         <>
-                          <span>Report This Problem →</span>
+                          <span>{t("reportProblem", "Report This Problem")}</span>
+                          <ArrowRight className="w-4 h-4" />
                         </>
                       )}
                     </button>
@@ -1074,285 +1197,379 @@ export default function CitizenPage({
                 {/* ========================================================================= */}
                 {/* CARD 1 — LOCATION */}
                 {/* ========================================================================= */}
-                <div className="bg-[#ffffff] border border-[#e5e4e0] rounded-[16px] p-5 sm:p-6 space-y-4 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
-                {/* Header */}
-                <div className="flex items-center gap-2.5 border-b border-[#f5f5f4] pb-3">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#f5f5ff] text-[#6366f1] border border-[#e0e7ff] text-[11px] font-mono font-bold">
-                    01
-                  </span>
-                  <h3 className="text-[16px] font-bold text-[#1c1917]">
-                    Select Your Location
-                  </h3>
-                </div>
-
-                {/* Country Flag Cards: 5 in a row */}
-                <div className="space-y-1.5">
-                  <label className="text-[12px] font-semibold text-[#78716c] uppercase tracking-[0.05em] block">
-                    BRICS Nation
-                  </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {BRICS_COUNTRIES.map((c) => {
-                      const isSelected = country === c.name;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setCountry(c.name);
-                            setLocationError("");
-                          }}
-                          className={`h-[60px] rounded-[12px] flex flex-col items-center justify-center transition-all duration-150 cursor-pointer select-none ${
-                            isSelected
-                              ? "bg-[#f5f5ff] border-2 border-[#6366f1] shadow-2xs"
-                              : "bg-[#ffffff] border border-[#e5e4e0] hover:bg-[#fafaf9]"
-                          }`}
-                        >
-                          <span className="text-[24px] leading-none mb-1">{c.flag}</span>
-                          <span
-                            className={`text-[10px] uppercase font-bold tracking-tight truncate w-full px-1 text-center ${
-                              isSelected ? "text-[#6366f1]" : "text-[#78716c]"
-                            }`}
-                          >
-                            {c.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* India Specific State Dropdown + District input */}
-                <div className="space-y-3 pt-1">
-                  {country === "India" && (
-                    <div className="space-y-1 animate-in fade-in duration-200">
-                      <label htmlFor="state-select" className="text-[12px] font-semibold text-[#78716c]">
-                        State (India)
-                      </label>
-                      <select
-                        id="state-select"
-                        value={state}
-                        onChange={(e) => setState(e.target.value)}
-                        className="w-full h-11 rounded-[10px] border border-[#e5e4e0] bg-[#fafaf9] px-3.5 text-[15px] text-[#1c1917] focus:outline-none focus:border-[#6366f1] focus:bg-[#ffffff] transition-all cursor-pointer"
-                      >
-                        {INDIAN_STATES.map((st) => (
-                          <option key={st} value={st}>
-                            {st}
-                          </option>
-                        ))}
-                      </select>
+                <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[16px] p-5 sm:p-6 space-y-4 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
+                  {/* Header */}
+                  <div className="flex items-center justify-between gap-2 border-b border-[var(--border-dim)] pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2 py-0.5 rounded-[6px] bg-[var(--brand-subtle)] text-[#6366f1] border border-[var(--brand-primary)]/20 text-[11px] font-mono font-bold">
+                        01
+                      </span>
+                      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">
+                        {t("selectYourLocation", "Select Your Location")}
+                      </h3>
                     </div>
-                  )}
 
-                  {/* District Input (16px to prevent iOS zoom) */}
-                  <div className="space-y-1">
-                    <label htmlFor="district-input" className="text-[12px] font-semibold text-[#78716c]">
-                      District / City <span className="text-[#ef4444]">*</span>
-                    </label>
-                    <input
-                      id="district-input"
-                      type="text"
-                      placeholder="e.g. Pune, Mumbai, Bengaluru, Cape Town..."
-                      value={district}
-                      onChange={(e) => {
-                        setDistrict(e.target.value);
-                        setLocationError("");
-                      }}
-                      className="w-full h-11 rounded-[10px] border border-[#e5e4e0] bg-[#fafaf9] px-3.5 text-[16px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] focus:bg-[#ffffff] transition-all"
-                      required
-                    />
-                    {locationError && (
-                      <p className="text-[12px] text-[#ef4444] font-medium mt-1">{locationError}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* ========================================================================= */}
-              {/* CARD 2 — VOICE INPUT */}
-              {/* ========================================================================= */}
-              <div className="bg-[#ffffff] border border-[#e5e4e0] rounded-[16px] p-5 sm:p-6 space-y-4 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-[#f5f5f4] pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="px-2 py-0.5 rounded-[6px] bg-[#f5f5ff] text-[#6366f1] border border-[#e0e7ff] text-[11px] font-mono font-bold">
-                      02
-                    </span>
-                    <h3 className="text-[16px] font-bold text-[#1c1917]">
-                      Voice Input (Optional)
-                    </h3>
-                  </div>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6366f1] bg-[#f5f5ff] px-2 py-0.5 rounded-[4px]">
-                    Gemini AI
-                  </span>
-                </div>
-
-                <VoiceInput
-                  onTranscribe={handleVoiceTranscribe}
-                  disabled={isSubmitting}
-                />
-              </div>
-
-              {/* ========================================================================= */}
-              {/* CARD 3 — TEXT INPUT */}
-              {/* ========================================================================= */}
-              <div className="bg-[#ffffff] border border-[#e5e4e0] rounded-[16px] p-5 sm:p-6 space-y-3.5 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
-                {/* Header */}
-                <div className="flex items-center gap-2.5 border-b border-[#f5f5f4] pb-3">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#f5f5ff] text-[#6366f1] border border-[#e0e7ff] text-[11px] font-mono font-bold">
-                    03
-                  </span>
-                  <h3 className="text-[16px] font-bold text-[#1c1917]">
-                    Describe the Problem <span className="text-[#ef4444]">*</span>
-                  </h3>
-                </div>
-
-                {/* Textarea */}
-                <textarea
-                  id="complaint-text"
-                  rows={4}
-                  maxLength={500}
-                  placeholder="Describe what happened in your local words (broken road, burst water main, power outage, sanitation hazard)..."
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    setTextError("");
-                  }}
-                  className="w-full min-h-[120px] rounded-[10px] border border-[#e5e4e0] bg-[#fafaf9] p-3.5 text-[16px] text-[#1c1917] placeholder:text-[#a8a29e] focus:outline-none focus:border-[#6366f1] focus:bg-[#ffffff] transition-all resize-y leading-relaxed"
-                  required
-                />
-
-                {/* Bottom Row: Language support indicator (Left) + Character count (Right) */}
-                <div className="flex items-center justify-between text-[12px] pt-0.5">
-                  <div className="flex items-center gap-1.5 text-[#78716c]">
-                    <Globe className="w-3.5 h-3.5 text-[#78716c]" />
-                    <span className="text-[11px] font-medium">Supports all languages</span>
-                  </div>
-                  <span className={`text-[12px] font-mono ${charColorClass}`}>
-                    {charLength} / 500
-                  </span>
-                </div>
-
-                {textError && (
-                  <p className="text-[12px] text-[#ef4444] font-medium">{textError}</p>
-                )}
-
-                {/* Clickable Example Prompt Chips */}
-                <div className="space-y-1.5 pt-1 border-t border-[#f5f5f4]">
-                  <span className="text-[11px] font-semibold text-[#78716c] uppercase tracking-[0.05em] block">
-                    Quick suggestions:
-                  </span>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {QUICK_PROMPTS.map((prompt) => (
-                      <button
-                        key={prompt.label}
-                        type="button"
-                        onClick={() => handleAppendPrompt(prompt.text)}
-                        className="px-3 py-1.5 rounded-[8px] border border-[#e5e4e0] bg-[#ffffff] hover:bg-[#f5f5ff] hover:border-[#6366f1]/40 text-[#44403c] text-[12px] font-medium transition-all duration-150 cursor-pointer shadow-2xs"
-                      >
-                        {prompt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* ========================================================================= */}
-              {/* CARD 4 — PHOTO */}
-              {/* ========================================================================= */}
-              <div className="bg-[#ffffff] border border-[#e5e4e0] rounded-[16px] p-5 sm:p-6 space-y-3.5 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
-                {/* Header */}
-                <div className="flex items-center gap-2.5 border-b border-[#f5f5f4] pb-3">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#f5f5ff] text-[#6366f1] border border-[#e0e7ff] text-[11px] font-mono font-bold">
-                    04
-                  </span>
-                  <h3 className="text-[16px] font-bold text-[#1c1917]">
-                    Attach Photo (Optional)
-                  </h3>
-                </div>
-
-                {/* Drag Zone (Height: 120px) or Image Preview */}
-                {!photoPreview ? (
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`h-[120px] rounded-[12px] border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 select-none ${
-                      isDragging
-                        ? "border-[#6366f1] bg-[#f5f5ff]"
-                        : "border-[#d4d4d4] bg-[#fafaf9] hover:border-[#6366f1] hover:bg-[#f5f5ff]"
-                    }`}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      id="photo-file-input"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-
-                    <div className="flex flex-col items-center justify-center space-y-1">
-                      <UploadCloud className="w-6 h-6 text-[#78716c]" />
-                      <div className="text-[13px] font-semibold text-[#1c1917]">
-                        Drop photo here
-                      </div>
-                      <div className="text-[11px] text-[#78716c]">
-                        or tap to browse (JPEG, PNG, max 5MB)
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* Uploaded Image Preview */
-                  <div className="relative rounded-[8px] overflow-hidden border border-[#e5e4e0] bg-[#fafaf9]">
-                    <img
-                      src={photoPreview}
-                      alt="Uploaded Infrastructure Damage"
-                      className="w-full max-h-[200px] object-cover"
-                    />
-                    {/* Top-right overlay close button (24px white circle) */}
                     <button
                       type="button"
-                      onClick={handleRemovePhoto}
-                      aria-label="Remove image"
-                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white text-[#1c1917] hover:text-[#ef4444] hover:scale-105 flex items-center justify-center shadow-md text-[12px] font-bold cursor-pointer transition-transform"
+                      id="btn-detect-my-location-full"
+                      onClick={handleDetectLocation}
+                      disabled={isLocating}
+                      className="h-8 px-3 rounded-[8px] bg-[var(--brand-subtle)] hover:bg-[#6366f1]/20 text-[#6366f1] border border-[#6366f1]/30 text-[12px] font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-150 shadow-2xs disabled:opacity-50"
                     >
-                      ✕
+                      {isLocating ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>{t("locating", "Detecting...")}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Crosshair className="w-3.5 h-3.5" />
+                          <span>{t("detectMyLocation", "Detect my location")}</span>
+                        </>
+                      )}
                     </button>
                   </div>
-                )}
 
-                {photoError && (
-                  <p className="text-[12px] text-[#ef4444] font-medium">{photoError}</p>
-                )}
-              </div>
-
-              {/* ========================================================================= */}
-              {/* SUBMIT BUTTON */}
-              {/* ========================================================================= */}
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  id="btn-submit-citizen-report"
-                  disabled={isSubmitting}
-                  className="w-full h-[52px] rounded-[12px] text-white text-[16px] font-semibold flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer disabled:opacity-50 select-none hover:-translate-y-[1px] active:translate-y-0 shadow-lg"
-                  style={{
-                    background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                    boxShadow: "0 4px 20px rgba(99, 102, 241, 0.35)",
-                  }}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin text-white" />
-                      <span>Classifying & Submitting Report...</span>
-                    </>
-                  ) : (
-                    <span>Submit Infrastructure Report</span>
+                  {/* Location Detection Notification */}
+                  {locationSuccessMsg && (
+                    <div className="p-2.5 rounded-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[12px] flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="font-medium">{locationSuccessMsg}</span>
+                    </div>
                   )}
-                </button>
-              </div>
-            </form>
-          )}
+
+                  {/* Country Flag Cards: 5 in a row */}
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-[0.05em] block">
+                      {t("bricsNation", "BRICS Nation")}
+                    </label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {BRICS_COUNTRIES.map((c) => {
+                        const isSelected = country === c.name;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => handleCountryChange(c.name)}
+                            className={`h-[60px] rounded-[12px] flex flex-col items-center justify-center transition-all duration-150 cursor-pointer select-none ${
+                              isSelected
+                                ? "bg-[var(--brand-subtle)] border-2 border-[#6366f1] shadow-2xs"
+                                : "bg-[var(--bg-surface)] border border-[var(--border-dim)] hover:bg-[var(--bg-elevated)]"
+                            }`}
+                          >
+                            <span className="text-[24px] leading-none mb-1">{c.flag}</span>
+                            <span
+                              className={`text-[10px] uppercase font-bold tracking-tight truncate w-full px-1 text-center ${
+                                isSelected ? "text-[#6366f1]" : "text-[var(--text-secondary)]"
+                              }`}
+                            >
+                              {c.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* State Dropdown (Loaded for ALL countries: India, Brazil, Russia, S. Africa, China) */}
+                  <div className="space-y-3 pt-1">
+                    {availableStates.length > 0 && (
+                      <div className="space-y-1 animate-in fade-in duration-200">
+                        <label htmlFor="state-select" className="text-[12px] font-semibold text-[var(--text-secondary)]">
+                          {t("stateProvince", "State / Province")} ({country})
+                        </label>
+                        <select
+                          id="state-select"
+                          value={state}
+                          onChange={(e) => setState(e.target.value)}
+                          className="w-full h-11 rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] px-3.5 text-[15px] text-[var(--text-primary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all cursor-pointer"
+                        >
+                          {availableStates.map((st) => (
+                            <option key={st} value={st} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* District Input with Dynamic Suggestions */}
+                    <div className="space-y-1">
+                      <label htmlFor="district-input" className="text-[12px] font-semibold text-[var(--text-secondary)]">
+                        {t("districtCity", "District / City")} <span className="text-[#ef4444]">*</span>
+                      </label>
+                      <input
+                        id="district-input"
+                        type="text"
+                        placeholder={
+                          country === "Brazil"
+                            ? "e.g. São Paulo, Rio de Janeiro, Curitiba..."
+                            : country === "South Africa"
+                            ? "e.g. Johannesburg, Cape Town, Durban..."
+                            : country === "China"
+                            ? "e.g. Chaoyang, Pudong, Shenzhen..."
+                            : country === "Russia"
+                            ? "e.g. Central AD, Tverskoy, Vasileostrovsky..."
+                            : "e.g. Pune, Mumbai, Bengaluru, Delhi..."
+                        }
+                        value={district}
+                        onChange={(e) => {
+                          setDistrict(e.target.value);
+                          setLocationError("");
+                        }}
+                        className="w-full h-11 rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] px-3.5 text-[16px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all"
+                        required
+                      />
+
+                      {/* District Quick Suggestion Chips */}
+                      {sampleDistricts.length > 0 && (
+                        <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
+                          <span className="text-[11px] text-[var(--text-tertiary)]">Quick pick:</span>
+                          {sampleDistricts.slice(0, 4).map((dName) => (
+                            <button
+                              key={dName}
+                              type="button"
+                              onClick={() => {
+                                setDistrict(dName);
+                                setLocationError("");
+                              }}
+                              className={`text-[11px] px-2 py-0.5 rounded-[6px] border transition-colors cursor-pointer ${
+                                district === dName
+                                  ? "bg-[#6366f1] text-white border-[#6366f1]"
+                                  : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-dim)] hover:bg-[var(--brand-subtle)] hover:text-[#6366f1]"
+                              }`}
+                            >
+                              {dName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {locationError && (
+                        <p className="text-[12px] text-[#ef4444] font-medium mt-1">{locationError}</p>
+                      )}
+                    </div>
+
+                    {/* Real Interactive Google Map */}
+                    <div className="pt-2 space-y-1.5">
+                      <label className="text-[12px] font-semibold text-[var(--text-secondary)] flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#6366f1]" />
+                          <span>{t("mapVerification", "Real Interactive GIS Map")}</span>
+                        </span>
+                        <span className="text-[11px] font-normal text-[var(--text-tertiary)]">
+                          Click or drag red pin to exact location
+                        </span>
+                      </label>
+                      <RealCitizenMap
+                        country={country}
+                        state={state}
+                        district={district}
+                        customCoords={detectedCoords}
+                        onCoordinatesChange={(coords) => setDetectedCoords(coords)}
+                        onDistrictDetected={(res) => {
+                          if (res.country) setCountry(res.country);
+                          if (res.state) setState(res.state);
+                          if (res.district) setDistrict(res.district);
+                        }}
+                        isLocating={isLocating}
+                        onDetectLocation={handleDetectLocation}
+                        showNearbyReports={true}
+                        height="240px"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ========================================================================= */}
+                {/* CARD 2 — VOICE INPUT */}
+                {/* ========================================================================= */}
+                <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[16px] p-5 sm:p-6 space-y-4 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
+                  {/* Header */}
+                  <div className="flex items-center justify-between border-b border-[var(--border-dim)] pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2 py-0.5 rounded-[6px] bg-[var(--brand-subtle)] text-[#6366f1] border border-[var(--brand-primary)]/20 text-[11px] font-mono font-bold">
+                        02
+                      </span>
+                      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">
+                        {t("voiceInputOptional", "Voice Input (Optional)")}
+                      </h3>
+                    </div>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6366f1] bg-[var(--brand-subtle)] px-2 py-0.5 rounded-[4px]">
+                      {t("geminiAI", "Gemini AI")}
+                    </span>
+                  </div>
+
+                  <VoiceInput
+                    onTranscribe={handleVoiceTranscribe}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* ========================================================================= */}
+                {/* CARD 3 — TEXT INPUT */}
+                {/* ========================================================================= */}
+                <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[16px] p-5 sm:p-6 space-y-3.5 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
+                  {/* Header */}
+                  <div className="flex items-center gap-2.5 border-b border-[var(--border-dim)] pb-3">
+                    <span className="px-2 py-0.5 rounded-[6px] bg-[var(--brand-subtle)] text-[#6366f1] border border-[var(--brand-primary)]/20 text-[11px] font-mono font-bold">
+                      03
+                    </span>
+                    <h3 className="text-[16px] font-bold text-[var(--text-primary)]">
+                      {t("describeProblem", "Describe the Problem")} <span className="text-[#ef4444]">*</span>
+                    </h3>
+                  </div>
+
+                  {/* Textarea */}
+                  <textarea
+                    id="complaint-text"
+                    rows={4}
+                    maxLength={500}
+                    placeholder="Describe what happened in your local words (broken road, burst water main, power outage, sanitation hazard)..."
+                    value={text}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      setTextError("");
+                    }}
+                    className="w-full min-h-[120px] rounded-[10px] border border-[var(--border-dim)] bg-[var(--bg-elevated)] p-3.5 text-[16px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:bg-[var(--bg-surface)] transition-all resize-y leading-relaxed"
+                    required
+                  />
+
+                  {/* Bottom Row: Language support indicator + Character count */}
+                  <div className="flex items-center justify-between text-[12px] pt-0.5">
+                    <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                      <Globe className="w-3.5 h-3.5 text-[var(--text-tertiary)]" />
+                      <span className="text-[11px] font-medium">{t("supportsAllLanguages", "Supports all languages")}</span>
+                    </div>
+                    <span className={`text-[12px] font-mono ${charColorClass}`}>
+                      {charLength} / 500
+                    </span>
+                  </div>
+
+                  {textError && (
+                    <p className="text-[12px] text-[#ef4444] font-medium">{textError}</p>
+                  )}
+
+                  {/* Clickable Example Prompt Chips */}
+                  <div className="space-y-1.5 pt-1 border-t border-[var(--border-dim)]">
+                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-[0.05em] block">
+                      {t("quickSuggestions", "Quick suggestions")}:
+                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {QUICK_PROMPTS.map((prompt) => {
+                        const PromptIcon = prompt.icon;
+                        return (
+                          <button
+                            key={prompt.label}
+                            type="button"
+                            onClick={() => handleAppendPrompt(prompt.text)}
+                            className="px-3 py-1.5 rounded-[8px] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--brand-subtle)] hover:border-[#6366f1]/40 text-[var(--text-primary)] text-[12px] font-medium transition-all duration-150 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                          >
+                            <PromptIcon className="w-3.5 h-3.5 text-[#6366f1]" />
+                            <span>{prompt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ========================================================================= */}
+                {/* CARD 4 — PHOTO */}
+                {/* ========================================================================= */}
+                <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[16px] p-5 sm:p-6 space-y-3.5 shadow-2xs transition-all duration-200 focus-within:ring-2 focus-within:ring-[#6366f1]/30 focus-within:border-[#6366f1]">
+                  {/* Header */}
+                  <div className="flex items-center gap-2.5 border-b border-[var(--border-dim)] pb-3">
+                    <span className="px-2 py-0.5 rounded-[6px] bg-[var(--brand-subtle)] text-[#6366f1] border border-[var(--brand-primary)]/20 text-[11px] font-mono font-bold">
+                      04
+                    </span>
+                    <h3 className="text-[16px] font-bold text-[var(--text-primary)]">
+                      {t("attachPhotoOptional", "Attach Photo (Optional)")}
+                    </h3>
+                  </div>
+
+                  {/* Drag Zone (Height: 120px) or Image Preview */}
+                  {!photoPreview ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`h-[120px] rounded-[12px] border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 select-none ${
+                        isDragging
+                          ? "border-[#6366f1] bg-[var(--brand-subtle)]"
+                          : "border-[var(--border-base)] bg-[var(--bg-elevated)] hover:border-[#6366f1] hover:bg-[var(--brand-subtle)]"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        id="photo-file-input"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+
+                      <div className="flex flex-col items-center justify-center space-y-1">
+                        <UploadCloud className="w-6 h-6 text-[var(--text-secondary)]" />
+                        <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                          {t("dropPhotoHere", "Drop photo here")}
+                        </div>
+                        <div className="text-[11px] text-[var(--text-secondary)]">
+                          {t("orTapToBrowse", "or tap to browse (JPEG, PNG, max 5MB)")}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Uploaded Image Preview */
+                    <div className="relative rounded-[8px] overflow-hidden border border-[var(--border-dim)] bg-[var(--bg-elevated)]">
+                      <img
+                        src={photoPreview}
+                        alt="Uploaded Infrastructure Damage"
+                        className="w-full max-h-[200px] object-cover"
+                      />
+                      {/* Top-right overlay close button (24px circle) */}
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        aria-label="Remove image"
+                        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 hover:bg-black text-white hover:scale-105 flex items-center justify-center shadow-md text-[12px] font-bold cursor-pointer transition-transform"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {photoError && (
+                    <p className="text-[12px] text-[#ef4444] font-medium">{photoError}</p>
+                  )}
+                </div>
+
+                {/* ========================================================================= */}
+                {/* SUBMIT BUTTON */}
+                {/* ========================================================================= */}
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    id="btn-submit-citizen-report"
+                    disabled={isSubmitting}
+                    className="w-full h-[52px] rounded-[12px] text-white text-[16px] font-semibold flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer disabled:opacity-50 select-none bg-[#6366f1] hover:bg-[#4f46e5] shadow-lg shadow-[#6366f1]/25"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin text-white" />
+                        <span>{t("submittingReport", "Classifying & Submitting Report...")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{t("submitReport", "Submit Infrastructure Report")}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         )}
       </main>

@@ -7,32 +7,35 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     submissionId = body.submissionId || body.docId || "";
+    const inputText = body.text || "";
 
-    if (!submissionId) {
+    if (!submissionId && !inputText) {
       return new Response(
-        JSON.stringify({ success: false, error: "submissionId is required" }),
+        JSON.stringify({ success: false, error: "Either submissionId or text is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // STEP 1 — Fetch the submission from Firestore using the submissionId
+    // STEP 1 — Fetch the submission from Firestore using the submissionId if provided
     let submission: any = null;
     let docRef: any = null;
 
-    try {
-      docRef = doc(db, "submissions", submissionId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        submission = docSnap.data();
+    if (submissionId) {
+      try {
+        docRef = doc(db, "submissions", submissionId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          submission = docSnap.data();
+        }
+      } catch (dbErr) {
+        console.warn("Firestore getDoc error:", dbErr);
       }
-    } catch (dbErr) {
-      console.warn("Firestore getDoc error (may be prototype ID):", dbErr);
     }
 
-    // Fallback data if Firestore is in local prototype state
+    // Fallback/direct data from request body
     if (!submission) {
       submission = {
-        text: body.text || "Citizen infrastructure complaint",
+        text: inputText || "Citizen infrastructure complaint",
         country: body.country || "India",
         district: body.district || "District",
       };
@@ -166,9 +169,17 @@ Return this exact JSON structure:
       }
     }
 
-    // STEP 5 — Return { success: true, classification: result }
+    // STEP 5 — Return { success: true, classification: result, ...fields }
     return new Response(
-      JSON.stringify({ success: true, classification }),
+      JSON.stringify({
+        success: true,
+        classification,
+        category: classification.category,
+        urgency: classification.urgency,
+        summary_english: classification.summary_english,
+        language_detected: classification.language_detected,
+        keywords: classification.keywords,
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (error: any) {

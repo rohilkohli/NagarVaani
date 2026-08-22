@@ -39,16 +39,12 @@ export default function BRICSComparison({
   isLoading = false,
   className = "",
 }: BRICSComparisonProps) {
-  // Combine live submissions with BRICS seed data so all 5 nations are populated
+  // Use real live submissions from Firestore (or seed fallback if database is brand new)
   const allSubmissions = useMemo(() => {
-    const list = [...submissions];
-    const existingIds = new Set(submissions.map((s) => s.id));
-    ALL_SEED_SUBMISSIONS.forEach((seed) => {
-      if (!existingIds.has(seed.id)) {
-        list.push(seed);
-      }
-    });
-    return list;
+    if (submissions && submissions.length > 0) {
+      return submissions;
+    }
+    return ALL_SEED_SUBMISSIONS;
   }, [submissions]);
 
   // Aggregate stats per category & country

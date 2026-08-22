@@ -3,12 +3,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NavTab } from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
+import { useLanguage, SUPPORTED_LANGUAGES, LanguageCode } from "@/lib/languageContext";
 import {
   Download,
   Menu,
   X,
   ChevronDown,
   FilePlus2,
+  Clock,
+  Check,
+  Globe,
 } from "lucide-react";
 
 export type TimeRange = "today" | "7d" | "30d" | "90d" | "all";
@@ -31,16 +35,6 @@ interface HeaderProps {
   onTimeRangeChange?: (range: TimeRange) => void;
 }
 
-const TAB_TITLES: Record<string, string> = {
-  overview: "Executive Overview",
-  heatmap: "Demand Heatmap",
-  brics: "BRICS Comparative View",
-  reports: "All Reports",
-  settings: "System Settings",
-  priority: "AI Priorities",
-  citizen: "Submit Grievance",
-};
-
 export default function Header({
   activeTab,
   onSelectTab,
@@ -50,11 +44,23 @@ export default function Header({
   timeRange = "30d",
   onTimeRangeChange,
 }: HeaderProps) {
+  const { language, setLanguage, currentLangOption, t } = useLanguage();
   const [isRangeDropdownOpen, setIsRangeDropdownOpen] = useState<boolean>(false);
+  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState<boolean>(false);
   const [secondsAgo, setSecondsAgo] = useState<number>(3);
 
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+
+  const tabTitles: Record<string, string> = {
+    overview: t("overview", "Executive Overview"),
+    heatmap: t("demandHeatmap", "Demand Heatmap"),
+    brics: t("bricsComparison", "BRICS Comparative View"),
+    reports: t("allSubmissions", "All Reports"),
+    settings: t("settings", "System Settings"),
+    priority: t("priorityInterventions", "AI Priorities"),
+    citizen: t("citizenPortal", "Submit Grievance"),
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -84,12 +90,9 @@ export default function Header({
       const isHorizontalSwipe = Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
 
       if (isHorizontalSwipe) {
-        // Swipe right to open drawer (especially from left edge or header)
         if (deltaX > 0 && !isMobileMenuOpen && (touchStartXRef.current < 40 || touchStartYRef.current < 60)) {
           onToggleMobileMenu();
-        }
-        // Swipe left to close drawer
-        else if (deltaX < 0 && isMobileMenuOpen) {
+        } else if (deltaX < 0 && isMobileMenuOpen) {
           onToggleMobileMenu();
         }
       }
@@ -129,44 +132,87 @@ export default function Header({
     touchStartYRef.current = null;
   };
 
-  const sectionTitle = TAB_TITLES[activeTab] || "Executive Overview";
+  const sectionTitle = tabTitles[activeTab] || t("overview", "Executive Overview");
 
   return (
     <header
       onTouchStart={handleHeaderTouchStart}
       onTouchEnd={handleHeaderTouchEnd}
-      className="h-[52px] min-h-[52px] w-full px-4 sm:px-6 flex items-center justify-between border-b border-[var(--border-dim)] bg-[var(--bg-base)] sticky top-0 z-30 select-none touch-pan-y"
+      className="h-[54px] min-h-[54px] w-full px-4 sm:px-6 flex items-center justify-between border-b border-[var(--border-dim)] bg-[var(--bg-base)] sticky top-0 z-30 select-none touch-pan-y"
       id="main-header"
     >
-      {/* LEFT: Mobile hamburger (36px × 36px, strictly visible on <768px, md:hidden) + Section Title (H3) */}
+      {/* LEFT: Mobile hamburger + Section Title */}
       <div className="flex items-center gap-3">
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden flex items-center justify-center w-9 h-9 min-w-[36px] min-h-[36px] rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            className="md:hidden flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
             aria-label="Toggle Navigation"
           >
-            {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            {isMobileMenuOpen ? <X className="w-4 h-4" strokeWidth={2} /> : <Menu className="w-4 h-4" strokeWidth={2} />}
           </button>
         )}
 
-        <h3 className="text-[16px] font-semibold tracking-tight text-[var(--text-primary)]">
+        <h3 className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)] leading-none">
           {sectionTitle}
         </h3>
       </div>
 
-      {/* RIGHT: Time range selector + Last updated + Export button + Quick Citizen link */}
-      <div className="flex items-center gap-3">
-        {/* Time range selector (ghost button: "Last 30 days ▾") */}
+      {/* RIGHT: Language Selector + Time range + Export + Theme + Citizen link */}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Instant Global Language Selector */}
         <div className="relative">
           <button
             type="button"
+            onClick={() => setIsLangDropdownOpen((prev) => !prev)}
+            className="h-8 px-2 sm:px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+            title="Switch UI Language"
+          >
+            <span className="text-[14px] leading-none">{currentLangOption.flag}</span>
+            <span className="hidden md:inline font-semibold">{currentLangOption.name}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-[var(--text-tertiary)]" strokeWidth={2} />
+          </button>
+
+          {isLangDropdownOpen && (
+            <div className="absolute right-0 mt-1 w-48 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] shadow-xl py-1 z-50 animate-in fade-in duration-100 max-h-72 overflow-y-auto">
+              <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-dim)]">
+                {t("selectLanguage", "Select Language")}
+              </div>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <button
+                  key={lang.code}
+                  onClick={() => {
+                    setLanguage(lang.code as LanguageCode);
+                    setIsLangDropdownOpen(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-surface)] cursor-pointer flex items-center justify-between transition-colors ${
+                    language === lang.code
+                      ? "text-[#6366f1] font-bold bg-[var(--brand-subtle)]"
+                      : "text-[var(--text-primary)]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[15px]">{lang.flag}</span>
+                    <span>{lang.nativeName}</span>
+                    <span className="text-[10px] text-[var(--text-tertiary)]">({lang.name})</span>
+                  </div>
+                  {language === lang.code && <Check className="w-3.5 h-3.5 text-[#6366f1]" strokeWidth={2.5} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Time range selector (ghost button: "Last 30 days ▾") */}
+        <div className="relative hidden sm:block">
+          <button
+            type="button"
             onClick={() => setIsRangeDropdownOpen((prev) => !prev)}
-            className="h-7 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+            className="h-8 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
           >
             <span>{TIME_RANGE_OPTIONS.find((opt) => opt.id === timeRange)?.label || "Last 30 days"}</span>
-            <ChevronDown className="w-3 h-3 text-[var(--text-tertiary)]" />
+            <ChevronDown className="w-3.5 h-3.5 text-[var(--text-tertiary)]" strokeWidth={2} />
           </button>
 
           {isRangeDropdownOpen && (
@@ -178,47 +224,48 @@ export default function Header({
                     onTimeRangeChange?.(opt.id);
                     setIsRangeDropdownOpen(false);
                   }}
-                  className={`w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-surface)] cursor-pointer flex items-center justify-between ${
+                  className={`w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-surface)] cursor-pointer flex items-center justify-between transition-colors ${
                     timeRange === opt.id
                       ? "text-[var(--brand-secondary)] font-semibold bg-[var(--brand-subtle)]/50"
-                      : "text-[var(--text-secondary)]"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   <span>{opt.label}</span>
-                  {timeRange === opt.id && <span className="text-[10px]">✓</span>}
+                  {timeRange === opt.id && <Check className="w-3.5 h-3.5 text-[var(--brand-secondary)]" strokeWidth={2.5} />}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Last updated: "Updated 3s ago" in grey small */}
-        <span className="hidden sm:inline text-[12px] text-[var(--text-tertiary)] font-normal">
-          Updated {secondsAgo}s ago
-        </span>
+        {/* Last updated */}
+        <div className="hidden xl:flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] font-normal">
+          <Clock className="w-3 h-3 text-[var(--text-tertiary)]" strokeWidth={1.75} />
+          <span>{secondsAgo}s</span>
+        </div>
 
-        {/* Export button (ghost with download icon) */}
+        {/* Export button */}
         <button
           type="button"
           onClick={onExportReport}
           id="btn-export-report"
-          className="h-7 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+          className="h-8 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
         >
-          <Download className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Export</span>
+          <Download className="w-3.5 h-3.5 text-[var(--text-secondary)]" strokeWidth={1.75} />
+          <span className="hidden sm:inline">{t("exportCSV", "Export")}</span>
         </button>
 
-        {/* Theme Switcher Toggle (Light/Dark mode) */}
+        {/* Theme Switcher Toggle */}
         <ThemeToggle id="header-theme-toggle" />
 
-        {/* Citizen Portal Ghost Link */}
+        {/* Citizen Portal Link */}
         <button
           type="button"
           onClick={() => onSelectTab("citizen")}
-          className="h-7 px-2.5 rounded-[var(--radius-sm)] bg-[var(--brand-subtle)] hover:bg-[var(--brand-primary)]/20 text-[12px] text-[var(--brand-secondary)] font-medium flex items-center gap-1.5 cursor-pointer transition-colors ml-1"
+          className="h-8 px-3 rounded-[var(--radius-sm)] bg-[var(--brand-subtle)] hover:bg-[var(--brand-primary)]/20 border border-[var(--brand-primary)]/25 text-[12px] text-[var(--brand-secondary)] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
         >
-          <FilePlus2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Citizen Portal</span>
+          <FilePlus2 className="w-3.5 h-3.5" strokeWidth={2} />
+          <span className="hidden sm:inline">{t("citizenPortal", "Citizen Portal")}</span>
         </button>
       </div>
     </header>

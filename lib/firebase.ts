@@ -7,27 +7,27 @@ const firebaseConfig = {
   apiKey:
     import.meta.env.VITE_FIREBASE_API_KEY ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_API_KEY || (window as any).__ENV?.NEXT_PUBLIC_FIREBASE_API_KEY : "") ||
-    "AIzaSyDummyKeyForInitialDevSetup1234567890",
+    "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
   authDomain:
     import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_AUTH_DOMAIN : "") ||
-    "nagarvaani-app.firebaseapp.com",
+    "nagarvaani-4a9c2.firebaseapp.com",
   projectId:
     import.meta.env.VITE_FIREBASE_PROJECT_ID ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_PROJECT_ID : "") ||
-    "nagarvaani-app",
+    "nagarvaani-4a9c2",
   storageBucket:
     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_STORAGE_BUCKET : "") ||
-    "nagarvaani-app.appspot.com",
+    "nagarvaani-4a9c2.firebasestorage.app",
   messagingSenderId:
     import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_MESSAGING_SENDER_ID : "") ||
-    "1234567890",
+    "31801776981",
   appId:
     import.meta.env.VITE_FIREBASE_APP_ID ||
     (typeof window !== "undefined" ? (window as any).__ENV?.VITE_FIREBASE_APP_ID : "") ||
-    "1:1234567890:web:abcdef123456",
+    "1:31801776981:web:37019c3740cfcdd26c2ddc",
 };
 
 // Initialize Firebase safely

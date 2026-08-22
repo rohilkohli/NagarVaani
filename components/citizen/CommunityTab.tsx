@@ -12,6 +12,15 @@ import {
   CheckCircle2,
   Users,
   ChevronDown,
+  Droplets,
+  Zap,
+  Trash2,
+  HeartPulse,
+  Compass,
+  FilePlus2,
+  ArrowRight,
+  Map as MapIcon,
+  List,
 } from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
@@ -25,6 +34,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import CommunityMapExplorer from "@/components/citizen/CommunityMapExplorer";
 
 interface CommunityTabProps {
   currentCountry?: string;
@@ -34,14 +44,14 @@ interface CommunityTabProps {
 
 const CATEGORY_META: Record<
   string,
-  { label: string; emoji: string; bg: string; text: string; border: string }
+  { label: string; icon: React.ComponentType<{ className?: string }>; bg: string; text: string; border: string }
 > = {
-  all: { label: "All", emoji: "✨", bg: "bg-[#f5f5f4]", text: "text-[#1c1917]", border: "border-[#e5e4e0]" },
-  roads: { label: "Roads", emoji: "🛣️", bg: "bg-orange-500/10", text: "text-orange-700", border: "border-orange-500/25" },
-  water: { label: "Water", emoji: "💧", bg: "bg-sky-500/10", text: "text-sky-700", border: "border-sky-500/25" },
-  electricity: { label: "Electricity", emoji: "⚡", bg: "bg-amber-500/10", text: "text-amber-700", border: "border-amber-500/25" },
-  sanitation: { label: "Sanitation", emoji: "🚽", bg: "bg-purple-500/10", text: "text-purple-700", border: "border-purple-500/25" },
-  health: { label: "Health", emoji: "🏥", bg: "bg-rose-500/10", text: "text-rose-700", border: "border-rose-500/25" },
+  all: { label: "All", icon: Sparkles, bg: "bg-[var(--bg-elevated)]", text: "text-[var(--text-primary)]", border: "border-[var(--border-dim)]" },
+  roads: { label: "Roads", icon: Compass, bg: "bg-orange-500/10", text: "text-orange-600 dark:text-orange-400", border: "border-orange-500/25" },
+  water: { label: "Water", icon: Droplets, bg: "bg-sky-500/10", text: "text-sky-600 dark:text-sky-400", border: "border-sky-500/25" },
+  electricity: { label: "Electricity", icon: Zap, bg: "bg-amber-500/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/25" },
+  sanitation: { label: "Sanitation", icon: Trash2, bg: "bg-purple-500/10", text: "text-purple-600 dark:text-purple-400", border: "border-purple-500/25" },
+  health: { label: "Health", icon: HeartPulse, bg: "bg-rose-500/10", text: "text-rose-600 dark:text-rose-400", border: "border-rose-500/25" },
 };
 
 const BRICS_COUNTRIES = [
@@ -77,6 +87,7 @@ export default function CommunityTab({
 }: CommunityTabProps) {
   const [selectedCountry, setSelectedCountry] = useState<string>(currentCountry);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -160,8 +171,10 @@ export default function CommunityTab({
   }, []);
 
   // Upvote Handler
-  const handleUpvote = async (submission: Submission, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleUpvote = async (submission: Submission, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
 
     const targetKey = submission.firestoreId || submission.id || "";
     if (!targetKey) return;
@@ -284,6 +297,7 @@ export default function CommunityTab({
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {Object.entries(CATEGORY_META).map(([key, meta]) => {
             const isSelected = selectedCategory === key;
+            const Icon = meta.icon;
             return (
               <button
                 key={key}
@@ -295,44 +309,97 @@ export default function CommunityTab({
                     : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] border border-[var(--border-dim)]"
                 }`}
               >
-                <span>{meta.emoji}</span>
+                <Icon className="w-3.5 h-3.5" strokeWidth={2} />
                 <span>{meta.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* SEARCH INPUT BAR */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-[var(--text-tertiary)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by city, district, or keywords (e.g. Patna, water, blackout)..."
-            className="w-full h-10 pl-9 pr-4 rounded-[12px] bg-[var(--bg-surface)] border border-[var(--border-dim)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] transition-all shadow-2xs"
-          />
-          {searchQuery && (
+        {/* SEARCH INPUT BAR & VIEW MODE SWITCHER */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-[var(--text-tertiary)] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by city, district, or keywords (e.g. Patna, water, blackout)..."
+              className="w-full h-10 pl-9 pr-4 rounded-[12px] bg-[var(--bg-surface)] border border-[var(--border-dim)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] transition-all shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="text-[11px] font-bold text-[var(--text-tertiary)] hover:text-[var(--text-primary)] absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* View Mode Toggle: List vs Real Interactive Map */}
+          <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-dim)] p-1 rounded-[12px] shrink-0 self-end sm:self-auto shadow-2xs">
             <button
               type="button"
-              onClick={() => setSearchQuery("")}
-              className="text-[11px] font-bold text-[var(--text-tertiary)] hover:text-[var(--text-primary)] absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]"
+              onClick={() => setViewMode("list")}
+              className={`px-3 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === "list"
+                  ? "bg-[var(--text-primary)] text-[var(--bg-base)] shadow-2xs font-bold"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
             >
-              Clear
+              <List className="w-3.5 h-3.5" />
+              <span>List Feed</span>
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setViewMode("map")}
+              className={`px-3 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === "map"
+                  ? "bg-[#6366f1] text-white shadow-2xs font-bold"
+                  : "text-[var(--text-secondary)] hover:text-[#6366f1]"
+              }`}
+            >
+              <MapIcon className="w-3.5 h-3.5" />
+              <span>Real Live Map</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* FEED LIST */}
-      {isLoading ? (
+      {/* VIEW MODE: REAL MAP VIEW OR LIST FEED */}
+      {viewMode === "map" ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-[12px] text-[var(--text-secondary)] px-1">
+            <span>
+              Real-time interactive incident map for <strong className="text-[var(--text-primary)]">{selectedCountry}</strong>
+            </span>
+            <span className="text-[11px] text-[#6366f1] font-medium flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live GIS Marker Sync
+            </span>
+          </div>
+
+          <CommunityMapExplorer
+            submissions={filteredSubmissions}
+            selectedCountry={selectedCountry}
+            selectedCategory={selectedCategory}
+            onUpvote={handleUpvote}
+            upvotedIds={upvotedIds}
+            onNavigateToTrack={onNavigateToTrack}
+          />
+        </div>
+      ) : isLoading ? (
         <div className="py-16 text-center space-y-3 bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)]">
           <Loader2 className="w-6 h-6 animate-spin text-[#6366f1] mx-auto" />
           <p className="text-[13px] text-[var(--text-secondary)]">Loading community reports...</p>
         </div>
       ) : filteredSubmissions.length === 0 ? (
         <div className="py-14 text-center space-y-3 bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)] p-6">
-          <div className="text-[28px]">🔍</div>
+          <div className="w-12 h-12 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mx-auto text-[var(--text-tertiary)]">
+            <Search className="w-6 h-6" strokeWidth={1.5} />
+          </div>
           <h3 className="text-[15px] font-bold text-[var(--text-primary)]">No reports found</h3>
           <p className="text-[13px] text-[var(--text-secondary)] max-w-sm mx-auto">
             No complaints matching your selected category and search query in {selectedCountry}.
@@ -341,9 +408,10 @@ export default function CommunityTab({
             <button
               type="button"
               onClick={onNavigateToReport}
-              className="mt-2 h-9 px-4 rounded-[10px] bg-[#6366f1] hover:bg-[#4f46e5] text-white text-[13px] font-semibold transition-colors cursor-pointer shadow-xs"
+              className="mt-2 h-9 px-4 rounded-[10px] bg-[#6366f1] hover:bg-[#4f46e5] text-white text-[13px] font-semibold transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 mx-auto"
             >
-              📝 Be the first to report an issue
+              <FilePlus2 className="w-4 h-4" />
+              <span>Be the first to report an issue</span>
             </button>
           )}
         </div>
@@ -361,6 +429,7 @@ export default function CommunityTab({
           {filteredSubmissions.map((item, index) => {
             const cat = item.category.toLowerCase();
             const meta = CATEGORY_META[cat] || CATEGORY_META.roads;
+            const CategoryIcon = meta.icon;
             const targetKey = item.firestoreId || item.id || `sub-${index}`;
             const isUpvoted = upvotedIds.has(targetKey);
             const upvoteCount = item.upvotes || 0;
@@ -376,9 +445,9 @@ export default function CommunityTab({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${meta.bg} ${meta.text} ${meta.border}`}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${meta.bg} ${meta.text} ${meta.border}`}
                     >
-                      <span>{meta.emoji}</span>
+                      <CategoryIcon className="w-3 h-3" strokeWidth={2.2} />
                       <span className="capitalize">{item.category}</span>
                     </span>
 
@@ -405,7 +474,7 @@ export default function CommunityTab({
                   {summaryClean}
                 </p>
 
-                {/* FOOTER: Action Bar & "👍 Same issue" Button */}
+                {/* FOOTER: Action Bar & "Same issue" Button */}
                 <div className="flex items-center justify-between pt-2 border-t border-[var(--border-dim)]">
                   <div className="flex items-center gap-2">
                     {/* UPVOTE BUTTON */}
@@ -414,18 +483,18 @@ export default function CommunityTab({
                       onClick={(e) => handleUpvote(item, e)}
                       className={`h-8 px-3 rounded-[8px] text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 select-none ${
                         isUpvoted
-                          ? "bg-[#eef2ff] border border-[#6366f1] text-[#4f46e5] shadow-2xs font-bold"
+                          ? "bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/40 text-[var(--brand-secondary)] shadow-2xs font-bold"
                           : "bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)] border border-[var(--border-dim)] text-[var(--text-primary)]"
                       }`}
                       title="Confirm this issue is happening in your area to raise its priority"
                     >
-                      <ThumbsUp className={`w-3.5 h-3.5 ${isUpvoted ? "fill-[#6366f1] text-[#6366f1]" : "text-[var(--text-secondary)]"}`} />
+                      <ThumbsUp className={`w-3.5 h-3.5 ${isUpvoted ? "fill-[var(--brand-primary)] text-[var(--brand-primary)]" : "text-[var(--text-secondary)]"}`} />
                       <span>{isUpvoted ? "Upvoted" : "Same issue"}</span>
                       {upvoteCount > 0 && (
                         <span
                           className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                             isUpvoted
-                              ? "bg-[#6366f1] text-white"
+                              ? "bg-[var(--brand-primary)] text-white"
                               : "bg-[var(--border-base)] text-[var(--text-primary)]"
                           }`}
                         >
@@ -443,7 +512,7 @@ export default function CommunityTab({
                       className="text-[11px] font-mono text-[var(--text-tertiary)] hover:text-[#6366f1] hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <span>{item.id}</span>
-                      <span>→</span>
+                      <ArrowRight className="w-3 h-3" />
                     </button>
                   )}
                 </div>

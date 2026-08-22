@@ -2,6 +2,7 @@
 
 import React from "react";
 import ThemeToggle from "./ThemeToggle";
+import { useLanguage } from "@/lib/languageContext";
 import {
   LayoutDashboard,
   Map,
@@ -9,6 +10,8 @@ import {
   FileText,
   Settings,
   Sparkles,
+  Sprout,
+  RotateCw,
 } from "lucide-react";
 
 export type NavTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "citizen" | "priority" | "track";
@@ -28,13 +31,15 @@ export default function Sidebar({
   onResetDemo,
   className = "",
 }: SidebarProps) {
+  const { t } = useLanguage();
+
   const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "heatmap", label: "Heatmap", icon: Map },
-    { id: "priority", label: "AI Priorities", icon: Sparkles },
-    { id: "brics", label: "BRICS View", icon: Globe2 },
-    { id: "reports", label: "All Reports", icon: FileText },
-    { id: "settings", label: "Settings", icon: Settings },
+    { id: "overview", label: t("overview", "Overview"), icon: LayoutDashboard },
+    { id: "heatmap", label: t("demandHeatmap", "Heatmap"), icon: Map },
+    { id: "priority", label: t("priorityInterventions", "AI Priorities"), icon: Sparkles },
+    { id: "brics", label: t("bricsComparison", "BRICS View"), icon: Globe2 },
+    { id: "reports", label: t("allSubmissions", "All Reports"), icon: FileText },
+    { id: "settings", label: t("settings", "Settings"), icon: Settings },
   ];
 
   return (
@@ -102,7 +107,7 @@ export default function Sidebar({
           <ThemeToggle id="sidebar-theme-toggle" />
         </div>
 
-        {/* Row 2: "🌱 Seed Demo Data" ghost button (full width) */}
+        {/* Row 2: "Seed Demo Data" ghost button (full width) */}
         {onSeedData && (
           <button
             type="button"
@@ -110,12 +115,12 @@ export default function Sidebar({
             id="btn-seed-demo-data"
             className="w-full h-8 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
-            <span>🌱</span>
+            <Sprout className="w-3.5 h-3.5 text-[var(--green)] shrink-0" strokeWidth={1.75} />
             <span>Seed Demo Data</span>
           </button>
         )}
 
-        {/* Row 3: "🔄 Refresh Demo Data" ghost button (full width) */}
+        {/* Row 3: "Refresh Demo Data" ghost button (full width) */}
         {onResetDemo && (
           <button
             type="button"
@@ -123,7 +128,7 @@ export default function Sidebar({
             id="btn-refresh-demo-data"
             className="w-full h-8 px-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
-            <span>🔄</span>
+            <RotateCw className="w-3.5 h-3.5 text-[var(--brand-secondary)] shrink-0" strokeWidth={1.75} />
             <span>Refresh Demo Data</span>
           </button>
         )}

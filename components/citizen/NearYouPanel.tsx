@@ -1,7 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from "react";
-import { MapPin, Users, Sparkles, Loader2 } from "lucide-react";
+import {
+  MapPin,
+  Users,
+  Sparkles,
+  Loader2,
+  Compass,
+  Droplets,
+  Zap,
+  Trash2,
+  HeartPulse,
+  GraduationCap,
+  FileText,
+  Sprout,
+} from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
@@ -13,14 +26,14 @@ interface NearYouPanelProps {
   currentSubmissionId?: string | null;
 }
 
-const CATEGORY_EMOJIS: Record<ComplaintCategory | string, string> = {
-  roads: "🛣️",
-  water: "💧",
-  electricity: "⚡",
-  sanitation: "🚽",
-  health: "🏥",
-  education: "🏫",
-  other: "📋",
+const CATEGORY_ICONS: Record<ComplaintCategory | string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  roads: { icon: Compass, color: "text-orange-500" },
+  water: { icon: Droplets, color: "text-sky-500" },
+  electricity: { icon: Zap, color: "text-amber-500" },
+  sanitation: { icon: Trash2, color: "text-purple-500" },
+  health: { icon: HeartPulse, color: "text-rose-500" },
+  education: { icon: GraduationCap, color: "text-emerald-500" },
+  other: { icon: FileText, color: "text-indigo-500" },
 };
 
 function formatDaysAgo(dateInput: any): string {
@@ -146,7 +159,7 @@ export default function NearYouPanel({
       {/* SECTION HEADER & SOCIAL PROOF */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--border-dim)]">
         <div className="flex items-center gap-2">
-          <span className="text-[16px]">📍</span>
+          <MapPin className="w-4 h-4 text-[#6366f1]" />
           <h3 className="text-[14px] font-bold text-[var(--text-primary)] tracking-tight">
             Reports near {district || "your area"}
           </h3>
@@ -175,7 +188,7 @@ export default function NearYouPanel({
       ) : reports.length === 0 ? (
         /* ZERO RESULTS STATE */
         <div className="py-4 px-3 rounded-[10px] bg-[var(--bg-elevated)] border border-[var(--border-dim)] text-center space-y-1">
-          <div className="text-[18px]">🌱</div>
+          <Sprout className="w-5 h-5 text-emerald-500 mx-auto" />
           <p className="text-[12px] font-semibold text-[var(--text-primary)]">
             You're the first to report from {district || "this area"}!
           </p>
@@ -187,7 +200,8 @@ export default function NearYouPanel({
         /* COMPACT CARDS LIST (Limit 5) */
         <div className="space-y-2">
           {reports.map((item, idx) => {
-            const emoji = CATEGORY_EMOJIS[item.category] || "📋";
+            const catObj = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.other;
+            const CatIcon = catObj.icon;
             const summary = (item.summary_english || item.text || "Civic infrastructure issue reported").trim();
             const truncated = summary.length > 60 ? `${summary.slice(0, 60)}…` : summary;
             const timeAgo = formatDaysAgo(item.created_at);
@@ -197,9 +211,9 @@ export default function NearYouPanel({
                 key={item.id || item.firestoreId || idx}
                 className="flex items-center justify-between gap-3 p-2.5 rounded-[10px] bg-[var(--bg-elevated)]/60 hover:bg-[var(--bg-elevated)] border border-[var(--border-dim)] transition-colors"
               >
-                {/* Left: Category Emoji */}
-                <div className="w-8 h-8 rounded-[8px] bg-[var(--bg-surface)] border border-[var(--border-dim)] flex items-center justify-center text-[15px] shrink-0 shadow-2xs">
-                  {emoji}
+                {/* Left: Category Icon */}
+                <div className="w-8 h-8 rounded-[8px] bg-[var(--bg-surface)] border border-[var(--border-dim)] flex items-center justify-center shrink-0 shadow-2xs">
+                  <CatIcon className={`w-4 h-4 ${catObj.color}`} />
                 </div>
 
                 {/* Center: Summary English (truncated to 60 chars) */}
