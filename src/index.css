@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
 
 :root,
 [data-theme="dark"],
@@ -119,6 +119,133 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.accessibility-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.accessibility-prompt {
+  width: min(100%, 560px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 2px solid var(--brand-primary);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.accessibility-prompt-eyebrow {
+  margin: 0 0 8px;
+  color: var(--brand-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.accessibility-prompt h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.accessibility-prompt p:not(.accessibility-prompt-eyebrow) {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.accessibility-prompt-options {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0;
+}
+
+.accessibility-prompt-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.accessibility-prompt-option input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--brand-primary);
+  flex: 0 0 auto;
+}
+
+.accessibility-prompt-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.accessibility-prompt-option small {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.accessibility-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.accessibility-large-text {
+  font-size: 112.5%;
+}
+
+.accessibility-high-contrast {
+  --border-base: rgba(255, 255, 255, 0.38);
+  --border-strong: rgba(255, 255, 255, 0.65);
+  --text-secondary: #d8d8e5;
+}
+
+.light.accessibility-high-contrast,
+[data-theme="light"].accessibility-high-contrast {
+  --border-base: #64748b;
+  --border-strong: #334155;
+  --text-secondary: #1e293b;
+}
+
+.accessibility-reduce-motion *,
+.accessibility-reduce-motion *::before,
+.accessibility-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (max-width: 640px) {
+  .accessibility-prompt {
+    padding: 22px;
+  }
+
+  .accessibility-prompt-actions > button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Typography Classes */

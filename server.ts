@@ -7,12 +7,91 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { getDepartmentForCategory, getSLADeadline } from "./lib/departments";
+import { validateRequiredEnv } from "./lib/env";
+import { authenticateFirebaseUser, createAdminSessionToken, verifyAdminSessionToken, UserRole } from "./lib/auth";
+import { getAdminFirestore } from "./lib/firebaseAdmin";
+import type { Firestore, Query } from "firebase-admin/firestore";
+import { appendStatusHistory, buildStatusHistoryEntry } from "./lib/audit";
+import { randomUUID } from "crypto";
+import { ALL_SEED_SUBMISSIONS } from "./lib/seedData";
+import { getMetrics, incrementMetric, logStructured, redactPii, requestId } from "./lib/observability";
+import { scoreDuplicate } from "./lib/duplicate";
+import { getRetentionCutoff, isOlderThanRetention } from "./lib/retention";
+
+async function findLikelyDuplicate(
+  firestore: Firestore,
+  candidate: { text: string; category: string; district: string; lat: number; lng: number; created_at: string }
+) {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const snapshot = await firestore.collection("submissions")
+    .where("district", "==", candidate.district)
+    .where("category", "==", candidate.category)
+    .limit(50)
+    .get();
+
+  let best: { id: string; score: number; distance_km: number } | null = null;
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const createdAt = new Date(String(data.created_at || "")).getTime();
+    if (!Number.isFinite(createdAt) || createdAt < cutoff || data.status === "duplicate") continue;
+    const scored = scoreDuplicate(candidate, {
+      id: doc.id,
+      text: String(data.text || data.summary_english || ""),
+      category: String(data.category || ""),
+      district: String(data.district || ""),
+      lat: Number(data.lat),
+      lng: Number(data.lng),
+      created_at: String(data.created_at || ""),
+      status: data.status,
+    });
+    if (scored && (!best || scored.score > best.score)) {
+      best = scored;
+    }
+  }
+  return best;
+}
 
 dotenv.config();
 
+const environment = (process.env.NODE_ENV || "development") as "development" | "production" | "test";
+
+const envConfig = validateRequiredEnv(process.env, {
+  environment,
+  allowMissingClient: true,
+});
+
+function getServerFirebaseConfig() {
+  const config = {
+    apiKey: process.env.VITE_FIREBASE_API_KEY,
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.VITE_FIREBASE_APP_ID,
+  };
+
+  const requiredKeys = Object.entries(config) as [string, string | undefined][];
+  const isLive = environment === "production" || String(process.env.APP_MODE || process.env.VITE_APP_MODE || "").toLowerCase() === "live";
+
+  if (isLive) {
+    for (const [key, value] of requiredKeys) {
+      if (!value || !value.trim() || /demo|dummy|placeholder|example|replace-me|not-set|fake|changeme/i.test(value)) {
+        throw new Error(`Missing or invalid Firebase server config: ${key}`);
+      }
+    }
+  }
+
+  return config;
+}
+
+if (environment === "production" && !envConfig.GEMINI_API_KEY) {
+  throw new Error("Missing required production env: GEMINI_API_KEY");
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
+  const idempotentSubmissions = new Map<string, { createdAt: number; response: Record<string, unknown> }>();
 
   // Security headers
   app.use(
@@ -82,6 +161,26 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
+  app.use((req, res, next) => {
+    const id = requestId(String(req.headers["x-request-id"] || ""));
+    const startedAt = process.hrtime.bigint();
+    res.setHeader("x-request-id", id);
+    res.locals.requestId = id;
+    incrementMetric("requests");
+    res.on("finish", () => {
+      const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      if (res.statusCode >= 500) incrementMetric("request_errors");
+      logStructured(res.statusCode >= 500 ? "error" : "info", "http_request", {
+        requestId: id,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        latencyMs: Number(latencyMs.toFixed(2)),
+      });
+    });
+    next();
+  });
+
   // Input sanitization middleware
   app.use((req, res, next) => {
     if (req.body && typeof req.body === "object") {
@@ -109,6 +208,464 @@ async function startServer() {
       app: "NagarVaani",
       timestamp: new Date().toISOString(),
     });
+  });
+
+  app.get("/api/ready", (req, res) => {
+    const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+    const hasAdminCredentials = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    const ready = environment !== "production" || (hasGemini && hasAdminCredentials);
+
+    return res.status(ready ? 200 : 503).json({
+      status: ready ? "ready" : "not_ready",
+      checks: {
+        gemini: hasGemini ? "configured" : "missing",
+        firebaseAdmin: hasAdminCredentials ? "configured" : "missing",
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/metrics", (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid || !session.payload || session.payload.role !== "admin") {
+      return res.status(403).json({ success: false, error: "Admin role required." });
+    }
+    return res.json({ success: true, metrics: getMetrics() });
+  });
+
+  app.post("/api/auth/login", (_req, res) => {
+    return res.status(410).json({
+      success: false,
+      error: environment === "production"
+        ? "Password authentication is disabled. Sign in with the configured identity provider."
+        : "Password authentication has been removed. Sign in with Firebase Auth.",
+    });
+  });
+
+  app.post("/api/internal/retention", async (req, res) => {
+    const expectedKey = process.env.INTERNAL_JOB_KEY;
+    if (!expectedKey || req.headers["x-internal-job-key"] !== expectedKey) {
+      return res.status(401).json({ success: false, error: "Invalid internal job credential." });
+    }
+
+    const retentionDays = Number(req.body?.retentionDays || process.env.RETENTION_DAYS || 365);
+    const cutoff = getRetentionCutoff(retentionDays);
+    let deleted = 0;
+    try {
+      const firestore = getAdminFirestore();
+      const snapshot = await firestore.collection("submissions").where("created_at", "<", cutoff.toISOString()).limit(400).get();
+      if (!snapshot.empty) {
+        const batch = firestore.batch();
+        for (const document of snapshot.docs) {
+          const data = document.data();
+          if (isOlderThanRetention(String(data.created_at || ""), cutoff)) {
+            batch.delete(document.ref);
+            deleted += 1;
+          }
+        }
+        await batch.commit();
+      }
+      await firestore.collection("audit_logs").add({
+        event: "retention_cleanup",
+        retention_days: retentionDays,
+        cutoff: cutoff.toISOString(),
+        deleted_submissions: deleted,
+        created_at: new Date().toISOString(),
+      });
+      return res.json({ success: true, deleted, cutoff: cutoff.toISOString() });
+    } catch (error) {
+      incrementMetric("firestore_failures");
+      logStructured("error", "retention_cleanup_failed", {
+        requestId: res.locals.requestId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return res.status(503).json({ success: false, error: "Retention cleanup is unavailable." });
+    }
+  });
+
+  app.post("/api/auth/session", async (req, res) => {
+    try {
+      const authorization = String(req.headers.authorization || "");
+      const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+      const user = await authenticateFirebaseUser(idToken);
+      const firestore = getAdminFirestore();
+      try {
+        await firestore.collection("audit_logs").add({
+          event: "staff_session_created",
+          actor_id: user.uid,
+          actor_role: user.role,
+          actor_email: user.email || null,
+          request_id: res.locals.requestId,
+          created_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        incrementMetric("firestore_failures");
+        logStructured("error", "staff_session_audit_failed", {
+          requestId: res.locals.requestId,
+          actorId: user.uid,
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+      const token = createAdminSessionToken({
+        sub: user.uid,
+        role: user.role,
+        email: user.email,
+      });
+
+      return res.json({ success: true, token, role: user.role, expiresIn: 60 * 60 });
+    } catch (error) {
+      console.error("Identity authentication error", { requestId: res.locals.requestId, error });
+      return res.status(401).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Authentication unavailable.",
+      });
+    }
+  });
+
+  app.get("/api/auth/validate", (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Missing bearer token." });
+    }
+
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid) {
+      return res.status(401).json({ success: false, error: session.reason || "Invalid session token." });
+    }
+
+    return res.json({
+      success: true,
+      valid: true,
+      role: session.payload?.role,
+      userId: session.payload?.sub,
+      expiresIn: Math.max(0, Number(session.payload?.exp ?? 0) - Math.floor(Date.now() / 1000)),
+    });
+
+    app.post("/api/admin/seed", async (req, res) => {
+      const authorization = String(req.headers.authorization || "");
+      const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+      const session = verifyAdminSessionToken(token);
+      if (!session.valid || !session.payload || !["admin", "supervisor"].includes(session.payload.role)) {
+        return res.status(403).json({ success: false, error: "A supervisor role is required to seed data." });
+      }
+
+      try {
+        const firestore = getAdminFirestore();
+        const batch = firestore.batch();
+        for (const item of ALL_SEED_SUBMISSIONS.slice(0, 50)) {
+          const ref = firestore.collection("submissions").doc();
+          batch.set(ref, {
+            ...item,
+            created_at: item.created_at.toISOString(),
+            source: "seed",
+            seeded_by: session.payload.sub,
+          });
+        }
+        await batch.commit();
+        return res.status(201).json({ success: true, count: Math.min(50, ALL_SEED_SUBMISSIONS.length) });
+      } catch (error) {
+        console.error("Admin seed error", { requestId: res.locals.requestId, error });
+        return res.status(503).json({ success: false, error: "Seed service is unavailable." });
+      }
+    });
+
+    app.post("/api/submissions/:submissionId/upvote", async (req, res) => {
+      try {
+        const firestore = getAdminFirestore();
+        const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+        const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
+        const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
+        const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
+        await firestore.runTransaction(async (transaction) => {
+          const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
+          if (!submission.exists) throw new Error("Complaint not found.");
+          if (!upvote.exists) {
+            transaction.set(upvoteRef, { submissionId: req.params.submissionId, createdAt: new Date().toISOString() });
+            transaction.update(submissionRef, { upvotes: Number(submission.data()?.upvotes || 0) + 1 });
+          }
+        });
+        return res.status(201).json({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
+        return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
+      }
+    });
+
+    app.delete("/api/submissions/:submissionId/upvote", async (req, res) => {
+      try {
+        const firestore = getAdminFirestore();
+        const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+        const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
+        const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
+        const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
+        await firestore.runTransaction(async (transaction) => {
+          const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
+          if (!submission.exists) throw new Error("Complaint not found.");
+          if (upvote.exists) {
+            transaction.delete(upvoteRef);
+            transaction.update(submissionRef, { upvotes: Math.max(0, Number(submission.data()?.upvotes || 0) - 1) });
+          }
+        });
+        return res.json({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
+        return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
+      }
+    });
+  });
+
+  app.post("/api/submissions", async (req, res) => {
+    const payload = req.body || {};
+    const text = String(payload.text || "").trim();
+    const category = String(payload.category || "other");
+    const country = String(payload.country || "India").trim();
+    const district = String(payload.district || "Unknown").trim();
+    const language = String(payload.language || "English").trim();
+    const state = String(payload.state || "").trim();
+    const urgency = Number(payload.urgency || 3);
+    const latitude = Number(payload.lat);
+    const longitude = Number(payload.lng);
+    const photoUrl = payload.photo_url ? String(payload.photo_url).trim() : "";
+    const validCategories = ["roads", "water", "electricity", "sanitation", "health", "education", "other"];
+
+    if (!text || text.length > 1000 || !validCategories.includes(category) || !country || !district ||
+      !Number.isInteger(urgency) || urgency < 1 || urgency > 5 ||
+      !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      photoUrl.length > 2048 || (photoUrl && !photoUrl.startsWith("https://"))) {
+      return res.status(400).json({ success: false, error: "Invalid complaint payload." });
+    }
+
+    const idempotencyKey = String(req.headers["idempotency-key"] || payload.idempotency_key || "").trim();
+    if (idempotencyKey) {
+      const previous = idempotentSubmissions.get(idempotencyKey);
+      if (previous && Date.now() - previous.createdAt < 24 * 60 * 60 * 1000) {
+        return res.status(200).json({ ...previous.response, replayed: true });
+      }
+    }
+
+    const trackingId = `NV-${Date.now().toString().slice(-6)}-${randomUUID().slice(0, 6).toUpperCase()}`;
+    const submission = {
+      id: trackingId,
+      text,
+      language,
+      category,
+      urgency,
+      summary_english: String(payload.summary_english || text).slice(0, 1000),
+      district,
+      state,
+      country,
+      lat: latitude,
+      lng: longitude,
+      photo_url: photoUrl || null,
+      created_at: new Date().toISOString(),
+      status: "pending",
+      status_history: [],
+      upvotes: 0,
+      source: String(payload.source || "web"),
+    };
+
+    try {
+      const firestore = getAdminFirestore();
+      const duplicate = await findLikelyDuplicate(firestore, submission);
+      const document = firestore.collection("submissions").doc();
+      const persistedSubmission = duplicate
+        ? {
+            ...submission,
+            status: "duplicate",
+            duplicate_of: duplicate.id,
+            duplicate_confidence: duplicate.score,
+            duplicate_distance_km: duplicate.distance_km,
+          }
+        : submission;
+      await document.set(persistedSubmission);
+
+      let jobId: string | undefined;
+      if (!duplicate) {
+        const job = firestore.collection("ai_jobs").doc();
+        jobId = job.id;
+        await job.set({
+          type: "classify_submission",
+          submission_id: document.id,
+          status: "queued",
+          attempts: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        setImmediate(() => {
+          fetch(`http://127.0.0.1:${PORT}/api/ai/jobs/${job.id}/process`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Internal-Job-Key": process.env.INTERNAL_JOB_KEY || "" },
+          }).catch((error) => console.error("AI job dispatch error", { jobId, error }));
+        });
+      }
+
+      const response = {
+        success: true,
+        trackingId,
+        firestoreId: document.id,
+        jobId,
+        duplicate: Boolean(duplicate),
+        duplicateOf: duplicate?.id,
+        submission: persistedSubmission,
+      };
+      if (idempotencyKey) idempotentSubmissions.set(idempotencyKey, { createdAt: Date.now(), response });
+      return res.status(duplicate ? 200 : 202).json(response);
+    } catch (error) {
+      incrementMetric("firestore_failures");
+      console.error("Submission persistence error", { requestId: res.locals.requestId, error });
+      return res.status(503).json({ success: false, error: "Submission service is unavailable." });
+    }
+  });
+
+  app.post("/api/ai/jobs/:jobId/process", async (req, res) => {
+    const expectedKey = process.env.INTERNAL_JOB_KEY;
+    if (expectedKey && req.headers["x-internal-job-key"] !== expectedKey) {
+      return res.status(401).json({ success: false, error: "Invalid internal job credential." });
+    }
+
+    try {
+      const firestore = getAdminFirestore();
+      const jobRef = firestore.collection("ai_jobs").doc(req.params.jobId);
+      const jobSnapshot = await jobRef.get();
+      if (!jobSnapshot.exists) return res.status(404).json({ success: false, error: "AI job not found." });
+      const job = jobSnapshot.data() || {};
+      if (job.status === "completed") return res.json({ success: true, status: "completed", replayed: true });
+
+      await jobRef.update({
+        status: "processing",
+        attempts: Number(job.attempts || 0) + 1,
+        updated_at: new Date().toISOString(),
+      });
+
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/classify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Internal-Job-Key": expectedKey || "" },
+        body: JSON.stringify({ submissionId: job.submission_id }),
+      });
+      if (!response.ok) throw new Error(`Classification returned ${response.status}`);
+
+      await jobRef.update({ status: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return res.status(202).json({ success: true, status: "completed" });
+    } catch (error) {
+      console.error("AI job processing error", { jobId: req.params.jobId, error });
+      try {
+        await getAdminFirestore().collection("ai_jobs").doc(req.params.jobId).update({
+          status: "failed",
+          error: error instanceof Error ? error.message : "AI processing failed",
+          updated_at: new Date().toISOString(),
+        });
+      } catch (updateError) {
+        console.error("AI job failure persistence error", { jobId: req.params.jobId, updateError });
+      }
+      return res.status(503).json({ success: false, error: "AI processing is temporarily unavailable." });
+    }
+  });
+
+  app.get("/api/admin/submissions", async (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid || !session.payload) {
+      return res.status(401).json({ success: false, error: "A valid staff session is required." });
+    }
+
+    const limitValue = Math.min(100, Math.max(1, Number(req.query.limit || 25)));
+    const cursor = String(req.query.cursor || "");
+    const district = String(req.query.district || "").trim();
+    const category = String(req.query.category || "").trim();
+    const status = String(req.query.status || "").trim();
+    const urgency = String(req.query.urgency || "").trim();
+    const department = String(req.query.department || "").trim();
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+
+    try {
+      const firestore = getAdminFirestore();
+      let query: Query = firestore.collection("submissions").orderBy("created_at", "desc").limit(limitValue + 1);
+      if (district) query = query.where("district", "==", district);
+      if (category) query = query.where("category", "==", category);
+      if (status) query = query.where("status", "==", status);
+      if (urgency) query = query.where("urgency", "==", Number(urgency));
+      if (department) query = query.where("department_id", "==", department);
+      if (from) query = query.where("created_at", ">=", from);
+      if (to) query = query.where("created_at", "<=", to);
+      if (cursor) {
+        const cursorSnapshot = await firestore.collection("submissions").doc(cursor).get();
+        if (cursorSnapshot.exists) query = query.startAfter(cursorSnapshot);
+      }
+      const snapshot = await query.get();
+      const rows = snapshot.docs.slice(0, limitValue);
+      const nextCursor = snapshot.docs.length > limitValue ? rows.at(-1)?.id : undefined;
+      return res.json({
+        success: true,
+        submissions: rows.map((doc) => ({ firestoreId: doc.id, ...doc.data() })),
+        nextCursor,
+      });
+    } catch (error) {
+      incrementMetric("firestore_failures");
+      console.error("Admin submissions query error", { requestId: res.locals.requestId, error });
+      return res.status(503).json({ success: false, error: "Submission query service is unavailable." });
+    }
+  });
+
+  app.patch("/api/admin/submissions/:submissionId/status", async (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+
+    if (!session.valid || !session.payload) {
+      return res.status(401).json({ success: false, error: "A valid staff session is required." });
+    }
+
+    const allowedStatuses = ["pending", "classified", "acknowledged", "in_progress", "resolved", "priority", "duplicate"];
+    const newStatus = String(req.body?.status || "");
+    if (!allowedStatuses.includes(newStatus)) {
+      return res.status(400).json({ success: false, error: "Invalid workflow status." });
+    }
+    const allowedRoles: UserRole[] = ["admin", "supervisor", "operator"];
+    if (!allowedRoles.includes(session.payload.role)) {
+      return res.status(403).json({ success: false, error: "Your role cannot update complaint status." });
+    }
+
+    try {
+      const firestore = getAdminFirestore();
+      const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+      const snapshot = await submissionRef.get();
+
+      if (!snapshot.exists) {
+        return res.status(404).json({ success: false, error: "Complaint not found." });
+      }
+
+      const current = snapshot.data() || {};
+      const history = appendStatusHistory(
+        Array.isArray(current.status_history) ? current.status_history : [],
+        buildStatusHistoryEntry(String(current.status || "pending"), newStatus, {
+          changedBy: session.payload.role,
+          note: String(req.body?.note || `Status changed to ${newStatus}`),
+        })
+      );
+
+      await submissionRef.update({ status: newStatus, status_history: history });
+      await firestore.collection("audit_logs").add({
+        event: "submission_status_changed",
+        submission_id: req.params.submissionId,
+        previous_status: current.status || "pending",
+        new_status: newStatus,
+        actor_id: session.payload.sub,
+        actor_role: session.payload.role,
+        request_id: res.locals.requestId,
+        note: String(req.body?.note || ""),
+        created_at: new Date().toISOString(),
+      });
+      return res.json({ success: true, status: newStatus, status_history: history });
+    } catch (error) {
+      console.error("Admin status update error:", error);
+      return res.status(503).json({ success: false, error: "Status update service is unavailable." });
+    }
   });
 
   // API Route: Complaint Status Tracking Endpoint
@@ -316,6 +873,10 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
 
   // API Route: Gemini Multilingual Complaint Classification Pipeline & Duplicate Detection & Vision Analysis
   app.post("/api/classify", async (req, res) => {
+    const internalJobKey = process.env.INTERNAL_JOB_KEY;
+    if (internalJobKey && req.headers["x-internal-job-key"] !== internalJobKey) {
+      return res.status(401).json({ success: false, error: "Classification is only available through the processing queue." });
+    }
     try {
       const { submissionId, docId, text, country, district, photo_url } = req.body || {};
       const targetId = submissionId || docId || "";
@@ -326,10 +887,7 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
       try {
         const { initializeApp, getApps, getApp } = await import("firebase/app");
         const { getFirestore, doc, getDoc } = await import("firebase/firestore");
-        const firebaseConfig = {
-          apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
-          projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
-        };
+        const firebaseConfig = getServerFirebaseConfig();
         const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
         dbInstance = getFirestore(fbApp);
 
@@ -343,7 +901,7 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
         console.warn("Firestore server-init notice in classify:", dbInitErr);
       }
 
-      const complaintText = submissionData?.text || text || "Road crater causing traffic stoppage";
+      const complaintText = redactPii(String(submissionData?.text || text || "Road crater causing traffic stoppage"));
       const complaintCountry = submissionData?.country || country || "India";
       const complaintDistrict = submissionData?.district || district || "General District";
       const complaintPhotoUrl = submissionData?.photo_url || photo_url || req.body?.photo_url || "";
@@ -385,7 +943,7 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
               .filter((d: any) => d.id !== targetId && d.data().status !== "duplicate")
               .map((d: any) => ({
                 id: d.id,
-                text: d.data().summary_english || d.data().text || "",
+                text: redactPii(String(d.data().summary_english || d.data().text || "")),
                 category: d.data().category,
               }))
               .filter((r: any) => Boolean(r.text));
@@ -456,6 +1014,7 @@ Return JSON:
             }
           }
         } catch (dupErr) {
+          incrementMetric("gemini_failures");
           console.warn("Duplicate detection notice:", dupErr);
         }
       }
@@ -657,6 +1216,7 @@ Return this exact JSON structure:
           classification,
         });
       } catch (geminiError: any) {
+        incrementMetric("gemini_failures");
         const isQuota =
           geminiError?.status === "RESOURCE_EXHAUSTED" ||
           geminiError?.message?.includes("429") ||
@@ -678,6 +1238,7 @@ Return this exact JSON structure:
         });
       }
     } catch (err: any) {
+      incrementMetric("gemini_failures");
       console.error("Classification error in server:", err);
       const fallbackResult = ruleBasedClassify(req.body?.text || "");
       return res.json({
@@ -699,10 +1260,7 @@ Return this exact JSON structure:
       const payload = req.body || {};
       const { initializeApp, getApps, getApp } = await import("firebase/app");
       const { getFirestore, collection, addDoc } = await import("firebase/firestore");
-      const firebaseConfig = {
-        apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
-        projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
-      };
+      const firebaseConfig = getServerFirebaseConfig();
       const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
       const dbInstance = getFirestore(fbApp);
 
@@ -1028,10 +1586,7 @@ Return as JSON array of objects.`;
         const { initializeApp, getApps, getApp } = await import("firebase/app");
         const { getFirestore, collection: col, addDoc } = await import("firebase/firestore");
 
-        const firebaseConfig = {
-          apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyClH7DM6-Z60uUH7mEha5gwrbxRO_pyLRY",
-          projectId: process.env.VITE_FIREBASE_PROJECT_ID || "nagarvaani-4a9c2",
-        };
+        const firebaseConfig = getServerFirebaseConfig();
 
         const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
         const db = getFirestore(fbApp);
@@ -1110,8 +1665,18 @@ Return as JSON array of objects.`;
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Port ${PORT} is already in use. Stop the existing server or run with PORT=<available-port>.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.error("Server failed to start:", error);
+    process.exitCode = 1;
   });
 }
 

@@ -3,6 +3,7 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { GoogleGenAI, Type } from "@google/genai";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { PriorityRecommendation } from "@/lib/types";
+import { jsonResponse, getErrorMessage } from "@/lib/api";
 
 export async function POST(req: Request) {
   try {
@@ -112,10 +113,7 @@ export async function POST(req: Request) {
         brics_parallel: `Similar ${item.category} infrastructure bottlenecks have been actively mitigated in São Paulo (Brazil) and Johannesburg (South Africa) via localized municipal fast-track grants.`,
       }));
 
-      return new Response(
-        JSON.stringify({ success: true, recommendations: fallbackRecommendations }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, recommendations: fallbackRecommendations });
     }
 
     const ai = new GoogleGenAI({
@@ -190,21 +188,15 @@ Return as JSON array of 10 objects.`;
     const parsedArray = JSON.parse(response.text || "[]");
 
     // STEP 4 — Return the array
-    return new Response(
-      JSON.stringify({
-        success: true,
-        recommendations: Array.isArray(parsedArray) ? parsedArray : [],
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      success: true,
+      recommendations: Array.isArray(parsedArray) ? parsedArray : [],
+    });
   } catch (error: any) {
     console.error("Priority Generation Error:", error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error?.message || "Failed to generate priority recommendations",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      success: false,
+      error: getErrorMessage(error),
+    }, 500);
   }
 }

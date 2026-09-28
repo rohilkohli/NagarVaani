@@ -57,6 +57,45 @@ npm run dev
 
 Open http://localhost:3000
 
+For an intentionally credential-free demo run, use:
+
+```bash
+APP_MODE=demo NODE_ENV=development GEMINI_API_KEY=demo-key npm run dev
+```
+
+The server uses `PORT=3000` by default. Set `PORT` to another available port
+when running alongside another local service.
+
+## Validation and deployment checks
+
+Run the same checks used by CI locally:
+
+```bash
+npm run check:env
+npm run lint
+npm test
+npm run build
+npm run dev
+# in another terminal:
+npm run smoke -- http://localhost:3000
+```
+
+Cloud Run deployment expects the production secrets `GEMINI_API_KEY`,
+`ADMIN_SESSION_SECRET`, `INTERNAL_JOB_KEY`, and `FIREBASE_SERVICE_ACCOUNT_JSON`
+to exist in Secret Manager. The deployment script updates `APP_URL` to the
+assigned service URL and runs the health/readiness smoke test automatically.
+
+Retention cleanup is exposed only to the internal scheduler at
+`POST /api/internal/retention` with the `INTERNAL_JOB_KEY`. Configure Cloud
+Scheduler or a Pub/Sub-triggered job to call it daily. Status changes and staff
+session creation are written to the backend-only `audit_logs` collection.
+
+### Accessibility
+
+On a visitor's first visit, NagarVaani asks whether accessibility support is
+needed. Visitors can enable larger text, higher contrast, and reduced motion.
+The choice is stored locally in the browser and does not require an account.
+
 ---
 
 ## Environment Variables
@@ -70,11 +109,36 @@ VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_GOOGLE_MAPS_API_KEY= # From Google Cloud Console
+ADMIN_SESSION_SECRET=      # Long random secret used only for short-lived staff sessions
+INTERNAL_JOB_KEY=          # Long random secret for internal asynchronous AI job dispatch
+PII_REDACTION_ENABLED=true # Redact contact and identity patterns before Gemini requests
+RETENTION_DAYS=365         # Retention policy used by scheduled deletion jobs
 WHATSAPP_PHONE_NUMBER_ID= # Meta Business WhatsApp Cloud API
 WHATSAPP_ACCESS_TOKEN=    # Meta Cloud API System User Token
 WHATSAPP_WEBHOOK_VERIFY_TOKEN= # e.g. nagarvaani_webhook_2026
 META_APP_SECRET=          # Meta App Secret
 ```
+
+### Staff authentication and roles
+
+Dashboard access uses Firebase Authentication with Google sign-in; there is no shared
+dashboard password or production password fallback. After creating a Firebase Auth user,
+provision a matching Firestore document at `users/{firebaseUid}`:
+
+```json
+{
+  "email": "operator@example.org",
+  "displayName": "Operations User",
+  "role": "operator",
+  "disabled": false
+}
+```
+
+Supported roles are `admin`, `supervisor`, `operator`, and `auditor`. The backend
+verifies the Firebase ID token, loads this persistent role record, and signs a
+short-lived session used by protected operational APIs. Only `admin` and `supervisor`
+accounts can seed demo data; `admin`, `supervisor`, and `operator` accounts can update
+complaint status.
 
 ---
 

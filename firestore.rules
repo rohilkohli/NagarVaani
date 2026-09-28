@@ -2,34 +2,27 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // SUBMISSIONS — citizens can create, anyone can read 
-    // classified ones, only server can update
+    function isStaff() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true;
+    }
+
+    function hasRole(role) {
+      return isStaff() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    // SUBMISSIONS — public intake remains constrained; operational writes are backend-only.
     match /submissions/{submissionId} {
-      // Anyone can read classified submissions (for community tab)
       allow read: if resource.data.status != 'pending';
       
-      // Anyone can create (no auth required for citizen portal)
-      // but enforce required fields and field limits
-      allow create: if
-        request.resource.data.keys().hasAll([
-          'text', 'category', 'country', 'district', 
-          'lat', 'lng', 'status', 'created_at'
-        ]) &&
-        request.resource.data.text is string &&
-        request.resource.data.text.size() <= 1000 &&
-        request.resource.data.category in [
-          'roads','water','electricity',
-          'sanitation','health','education','other'
-        ] &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.urgency is int &&
-        request.resource.data.urgency >= 1 &&
-        request.resource.data.urgency <= 5;
+      // Citizen creation is handled by the backend, which applies validation,
+      // idempotency, rate limits, and audit metadata.
+      allow create: if false;
       
-      // Only authenticated admin users can update status
-      // (server-side calls bypass these rules, which is correct)
-      allow update: if request.auth != null && 
-        request.auth.token.admin == true;
+      // All operational mutations go through the backend Admin SDK.
+      allow update: if false;
       
       // No deletes from client
       allow delete: if false;
@@ -38,16 +31,24 @@ service cloud.firestore {
     // UPVOTES — track per-user upvotes to prevent duplicates
     match /upvotes/{upvoteId} {
       allow read: if true;
-      allow create: if 
-        request.resource.data.submissionId is string &&
-        request.resource.data.ip is string;
+      allow create: if false;
       allow update, delete: if false;
     }
     
-    // ADMIN USERS collection
-    match /admin_users/{userId} {
-      allow read, write: if request.auth != null && 
-        request.auth.uid == userId;
+    // Persistent staff profiles. Users can read their own role; only backend manages roles.
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Audit records are backend-only and may contain staff identity metadata.
+    match /audit_logs/{auditId} {
+      allow read, write: if false;
+    }
+
+    // Asynchronous AI jobs are backend-only.
+    match /ai_jobs/{jobId} {
+      allow read, write: if false;
     }
 
     // Default: deny everything else

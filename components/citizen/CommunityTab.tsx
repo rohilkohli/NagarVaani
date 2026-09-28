@@ -28,9 +28,6 @@ import { db } from "@/lib/firebase";
 import {
   collection,
   onSnapshot,
-  doc,
-  updateDoc,
-  increment,
   query,
   orderBy,
 } from "firebase/firestore";
@@ -210,15 +207,14 @@ export default function CommunityTab({
       })
     );
 
-    // Firestore update if document ID is valid
     if (submission.firestoreId) {
       try {
-        const docRef = doc(db, "submissions", submission.firestoreId);
-        await updateDoc(docRef, {
-          upvotes: increment(incrementDelta),
+        const response = await fetch(`/api/submissions/${encodeURIComponent(submission.firestoreId)}/upvote`, {
+          method: incrementDelta > 0 ? "POST" : "DELETE",
         });
+        if (!response.ok) throw new Error("Upvote request failed");
       } catch (err) {
-        console.warn("Firestore upvote sync notice:", err);
+        console.warn("Upvote sync notice:", err);
       }
     }
   };

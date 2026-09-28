@@ -22,8 +22,20 @@ steps:
       '--min-instances', '1',
       '--max-instances', '10',
       '--set-env-vars', 
-      'NODE_ENV=production,APP_URL=https://nagarvaani-HASH-el.a.run.app'
+      'NODE_ENV=production,APP_URL=https://nagarvaani-bootstrap.invalid',
+      '--set-secrets',
+      'GEMINI_API_KEY=GEMINI_API_KEY:latest,ADMIN_SESSION_SECRET=ADMIN_SESSION_SECRET:latest,INTERNAL_JOB_KEY=INTERNAL_JOB_KEY:latest,FIREBASE_SERVICE_ACCOUNT_JSON=FIREBASE_SERVICE_ACCOUNT_JSON:latest'
     ]
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        SERVICE_URL="$$(gcloud run services describe nagarvaani --region=asia-south1 --format='value(status.url)')"
+        gcloud run services update nagarvaani --region=asia-south1 --update-env-vars="APP_URL=$${SERVICE_URL}"
+        curl --fail --silent --show-error "$${SERVICE_URL}/api/health"
+        curl --fail --silent --show-error "$${SERVICE_URL}/api/ready"
 
 images:
   - 'gcr.io/$PROJECT_ID/nagarvaani:$COMMIT_SHA'

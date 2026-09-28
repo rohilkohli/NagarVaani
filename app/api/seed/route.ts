@@ -1,25 +1,38 @@
-import { db } from "@/lib/firebase";
-import { seedDatabase } from "@/lib/seedData";
+import { getAdminFirestore } from "@/lib/firebaseAdmin";
+import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
+import { authenticateFirebaseUser, verifyAdminSessionToken } from "@/lib/auth";
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const secret = searchParams.get("secret");
-
-    // Protect with secret query param: ?secret=nagarvaani_seed_2026
-    if (secret !== "nagarvaani_seed_2026") {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized: Invalid or missing secret parameter" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
+    const authorization = String(req.headers.get("authorization") || "");
+    const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    let user: { uid: string; role: string };
+    const session = verifyAdminSessionToken(idToken);
+    if (session.valid && session.payload) {
+      user = { uid: session.payload.sub, role: session.payload.role };
+    } else {
+      const authenticated = await authenticateFirebaseUser(idToken);
+      user = { uid: authenticated.uid, role: authenticated.role };
+    }
+    if (!["admin", "supervisor"].includes(user.role)) {
+      return new Response(JSON.stringify({ success: false, error: "A supervisor role is required to seed data." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    const result = await seedDatabase(db);
+    const firestore = getAdminFirestore();
+    const batch = firestore.batch();
+    for (const item of ALL_SEED_SUBMISSIONS.slice(0, 50)) {
+      const ref = firestore.collection("submissions").doc();
+      batch.set(ref, { ...item, created_at: item.created_at.toISOString(), source: "seed", seeded_by: user.uid });
+    }
+    await batch.commit();
 
     return new Response(
       JSON.stringify({
         success: true,
-        count: result.count || 50,
+        count: Math.min(50, ALL_SEED_SUBMISSIONS.length),
         message: "Database successfully populated with realistic BRICS infrastructure submissions.",
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }

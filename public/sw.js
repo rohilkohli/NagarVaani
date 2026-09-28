@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nagarvaani-v1';
+const CACHE_NAME = 'nagarvaani-v2';
 const STATIC_ASSETS = [
   '/',
   '/citizen',

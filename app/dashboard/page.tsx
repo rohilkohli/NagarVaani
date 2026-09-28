@@ -1,18 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from "react";
-import { db } from "@/lib/firebase";
-import { collection, onSnapshot, addDoc, doc, updateDoc } from "firebase/firestore";
+import React, { lazy, Suspense, useState, useEffect, useMemo } from "react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
-import StatsPanel from "@/components/dashboard/StatsPanel";
-import DemandHeatmap from "@/components/dashboard/DemandHeatmap";
 import PriorityPanel from "@/components/dashboard/PriorityPanel";
-import PriorityRankingsView from "@/components/dashboard/PriorityRankingsView";
-import BRICSComparison from "@/components/dashboard/BRICSComparison";
-import DepartmentView from "@/components/dashboard/DepartmentView";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
+import { buildStatusHistoryEntry, appendStatusHistory } from "@/lib/audit";
 import {
   Search,
   CheckCircle2,
@@ -28,6 +22,18 @@ import {
   Flag,
   Building2,
 } from "lucide-react";
+
+const StatsPanel = lazy(() => import("@/components/dashboard/StatsPanel"));
+const DemandHeatmap = lazy(() => import("@/components/dashboard/DemandHeatmap"));
+const PriorityRankingsView = lazy(() => import("@/components/dashboard/PriorityRankingsView"));
+const BRICSComparison = lazy(() => import("@/components/dashboard/BRICSComparison"));
+const DepartmentView = lazy(() => import("@/components/dashboard/DepartmentView"));
+
+function DashboardPanelFallback() {
+  return (
+    <div className="min-h-[180px] rounded-[var(--radius-md)] border border-[var(--border-dim)] bg-[var(--bg-surface)] animate-pulse" />
+  );
+}
 
 export type DashboardTab = "overview" | "heatmap" | "brics" | "reports" | "settings" | "priority" | "departments";
 
@@ -102,7 +108,7 @@ export default function DashboardPage({
     return () => window.removeEventListener("click", handleOutsideClick);
   }, []);
 
-  // 1. REAL-TIME FIRESTORE DATA INTAKE (Active when autoRefresh is true)
+  // 1. Filtered, cursor-paginated backend intake (active when autoRefresh is true)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -112,64 +118,49 @@ export default function DashboardPage({
       return;
     }
 
-    try {
-      const q = collection(db, "submissions");
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          if (!isMounted) return;
-
-          if (!snapshot.empty) {
-            const data: Submission[] = snapshot.docs.map((doc) => {
-              const d = doc.data();
-              return {
-                id: doc.id.startsWith("NV-") ? doc.id : `NV-${doc.id.slice(0, 6).toUpperCase()}`,
-                firestoreId: doc.id,
-                text: d.text || "",
-                language: d.language || "English",
-                category: (d.category as ComplaintCategory) || "roads",
-                urgency: (d.urgency as 1 | 2 | 3 | 4 | 5) || 3,
-                summary_english: d.summary_english || d.text || "",
-                district: d.district || "",
-                state: d.state || "",
-                country: d.country || "India",
-                lat: d.lat || 20.5937,
-                lng: d.lng || 78.9629,
-                photo_url: d.photo_url || undefined,
-                created_at: d.created_at ? new Date(d.created_at) : new Date(),
-                status: (d.status as Submission["status"]) || "classified",
-                upvotes: Number(d.upvotes) || 0,
-                department_id: d.department_id || undefined,
-                department_name: d.department_name || undefined,
-                sla_deadline: d.sla_deadline || undefined,
-                sla_status: d.sla_status || undefined,
-              };
-            });
-            setSubmissions(data);
-          } else {
-            setSubmissions(ALL_SEED_SUBMISSIONS);
-          }
-          setIsLoading(false);
-        },
-        (err) => {
-          console.warn("Firestore listener fallback to seed dataset:", err);
-          if (isMounted) {
-            setSubmissions(ALL_SEED_SUBMISSIONS);
-            setIsLoading(false);
-          }
-        }
-      );
-
-      return () => {
-        isMounted = false;
-        unsubscribe();
-      };
-    } catch (e) {
-      if (isMounted) {
-        setSubmissions(ALL_SEED_SUBMISSIONS);
-        setIsLoading(false);
+    const loadSubmissions = async () => {
+      try {
+        const token = sessionStorage.getItem("nv_dashboard_token");
+        const response = await fetch("/api/admin/submissions?limit=100", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error("Submission query failed");
+        const payload = await response.json();
+        const data: Submission[] = (payload.submissions || []).map((d: any) => ({
+          id: d.id || (d.firestoreId.startsWith("NV-") ? d.firestoreId : `NV-${d.firestoreId.slice(0, 6).toUpperCase()}`),
+          firestoreId: d.firestoreId,
+          text: d.text || "",
+          language: d.language || "English",
+          category: (d.category as ComplaintCategory) || "roads",
+          urgency: (d.urgency as 1 | 2 | 3 | 4 | 5) || 3,
+          summary_english: d.summary_english || d.text || "",
+          district: d.district || "",
+          state: d.state || "",
+          country: d.country || "India",
+          lat: d.lat || 20.5937,
+          lng: d.lng || 78.9629,
+          photo_url: d.photo_url || undefined,
+          created_at: d.created_at ? new Date(d.created_at) : new Date(),
+          status: (d.status as Submission["status"]) || "classified",
+          upvotes: Number(d.upvotes) || 0,
+          department_id: d.department_id || undefined,
+          department_name: d.department_name || undefined,
+          sla_deadline: d.sla_deadline || undefined,
+          sla_status: d.sla_status || undefined,
+          status_history: Array.isArray(d.status_history) ? d.status_history : [],
+        }));
+        if (isMounted) setSubmissions(data.length > 0 ? data : ALL_SEED_SUBMISSIONS);
+      } catch (error) {
+        console.warn("Backend submission query fallback to seed dataset:", error);
+        if (isMounted) setSubmissions(ALL_SEED_SUBMISSIONS);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-    }
+    };
+    void loadSubmissions();
+    return () => {
+      isMounted = false;
+    };
   }, [autoRefresh]);
 
   // Single status update handler
@@ -190,9 +181,16 @@ export default function DashboardPage({
       priority: "Priority",
     };
 
+    const nextHistory = appendStatusHistory(
+      row.status_history,
+      buildStatusHistoryEntry(row.status, newStatus, {
+        note: `Status changed to ${statusDisplayMap[newStatus] || newStatus}`,
+      })
+    );
+
     // Instant local state update for real-time reactivity
     setSubmissions((prev) =>
-      prev.map((s) => (s.id === row.id ? { ...s, status: newStatus } : s))
+      prev.map((s) => (s.id === row.id ? { ...s, status: newStatus, status_history: nextHistory } : s))
     );
 
     setToastMessage(`Updated to: ${statusDisplayMap[newStatus] || newStatus}`);
@@ -202,10 +200,27 @@ export default function DashboardPage({
     try {
       const docId = row.firestoreId || (row.id && !row.id.startsWith("seed-") ? row.id : null);
       if (docId) {
-        await updateDoc(doc(db, "submissions", docId), { status: newStatus });
+        const token = typeof window !== "undefined" ? sessionStorage.getItem("nv_dashboard_token") : null;
+        const response = await fetch(`/api/admin/submissions/${encodeURIComponent(docId)}/status`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            status: newStatus,
+            note: `Status changed to ${statusDisplayMap[newStatus] || newStatus}`,
+          }),
+        });
+        if (!response.ok) throw new Error("Status update request failed");
       }
     } catch (err) {
       console.warn("Could not persist status update to Firestore:", err);
+      setSubmissions((prev) =>
+        prev.map((submission) => (submission.id === row.id ? row : submission))
+      );
+      setToastMessage("Status update could not be saved. The previous status was restored.");
+      setTimeout(() => setToastMessage(null), 4000);
     }
   };
 
@@ -237,9 +252,24 @@ export default function DashboardPage({
       priority: "Priority",
     };
 
+    const nextHistoryForRows = submissions
+      .filter((s) => idsToUpdate.includes(s.id || ""))
+      .map((s) => ({
+        rowId: s.id,
+        history: appendStatusHistory(
+          s.status_history,
+          buildStatusHistoryEntry(s.status, newStatus, {
+            note: `Bulk status update: ${statusDisplayMap[newStatus] || newStatus}`,
+          })
+        ),
+      }));
+
     // 1. Instant local state update
     setSubmissions((prev) =>
-      prev.map((s) => (idsToUpdate.includes(s.id || "") ? { ...s, status: newStatus } : s))
+      prev.map((s) => {
+        const matching = nextHistoryForRows.find((item) => item.rowId === s.id);
+        return matching && idsToUpdate.includes(s.id || "") ? { ...s, status: newStatus, status_history: matching.history } : s;
+      })
     );
     setSelectedRowIds([]);
     setToastMessage(`Updated ${count} reports to: ${statusDisplayMap[newStatus] || newStatus}`);
@@ -251,9 +281,22 @@ export default function DashboardPage({
       const promises = selectedSubs.map((sub) => {
         const docId = sub.firestoreId || (sub.id && !sub.id.startsWith("seed-") ? sub.id : null);
         if (docId) {
-          return updateDoc(doc(db, "submissions", docId), { status: newStatus }).catch((err) =>
-            console.warn("Doc update failed for", docId, err)
-          );
+          const token = typeof window !== "undefined" ? sessionStorage.getItem("nv_dashboard_token") : null;
+          return fetch(`/api/admin/submissions/${encodeURIComponent(docId)}/status`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              status: newStatus,
+              note: `Bulk update to ${statusDisplayMap[newStatus] || newStatus}`,
+            }),
+          }).then((response) => {
+            if (!response.ok) throw new Error("Status update request failed");
+          }).catch((err) => {
+            console.warn("Doc update failed for", docId, err);
+          });
         }
         return Promise.resolve();
       });
@@ -267,22 +310,12 @@ export default function DashboardPage({
   const handleSeedDemoData = async () => {
     try {
       setToastMessage("Seeding BRICS demo records to Firestore...");
-      for (const item of ALL_SEED_SUBMISSIONS.slice(0, 10)) {
-        await addDoc(collection(db, "submissions"), {
-          text: item.text,
-          language: item.language,
-          category: item.category,
-          urgency: item.urgency,
-          summary_english: item.summary_english,
-          district: item.district,
-          state: item.state,
-          country: item.country,
-          lat: item.lat,
-          lng: item.lng,
-          created_at: item.created_at.toISOString(),
-          status: item.status,
-        });
-      }
+      const token = sessionStorage.getItem("nv_dashboard_token");
+      const response = await fetch("/api/admin/seed", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("Seed request failed");
       setToastMessage("Demo records successfully seeded!");
       setTimeout(() => setToastMessage(null), 3000);
     } catch (err: any) {
@@ -345,24 +378,36 @@ export default function DashboardPage({
     return filteredTableSubmissions.slice(start, start + itemsPerPage);
   }, [filteredTableSubmissions, currentPage]);
 
+  const selectedSubmission = useMemo(
+    () => submissions.find((submission) => submission.id === selectedRowId) || null,
+    [submissions, selectedRowId]
+  );
+
   if (activeTab === "priority") {
-    return <PriorityRankingsView submissions={filteredSubmissions} />;
+    return (
+      <Suspense fallback={<DashboardPanelFallback />}>
+        <PriorityRankingsView submissions={filteredSubmissions} />
+      </Suspense>
+    );
   }
 
   if (activeTab === "departments") {
     return (
-      <DepartmentView
-        submissions={filteredSubmissions}
-        onNavigateToReports={(category, filterTerm) => {
-          handleNavigateToReportsFiltered(filterTerm || "", category || "all");
-        }}
-        onSelectTab={onSelectTab}
-      />
+      <Suspense fallback={<DashboardPanelFallback />}>
+        <DepartmentView
+          submissions={filteredSubmissions}
+          onNavigateToReports={(category, filterTerm) => {
+            handleNavigateToReportsFiltered(filterTerm || "", category || "all");
+          }}
+          onSelectTab={onSelectTab}
+        />
+      </Suspense>
     );
   }
 
   return (
-    <div key={activeTab} className="page-transition-enter space-y-6 select-none" id="dashboard-page-container">
+    <Suspense fallback={<DashboardPanelFallback />}>
+      <div key={activeTab} className="page-transition-enter space-y-6 select-none" id="dashboard-page-container">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 p-3 px-4 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-strong)] text-[13px] text-[var(--text-primary)] shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -823,6 +868,39 @@ export default function DashboardPage({
             </table>
           </div>
 
+          {selectedSubmission && (
+            <section className="border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] p-4" aria-label="Complaint audit history">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Complaint audit history</p>
+                  <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">{selectedSubmission.id}</h3>
+                </div>
+                <span className="text-[12px] text-[var(--text-secondary)]">
+                  {selectedSubmission.status_history?.length || 0} recorded transition{selectedSubmission.status_history?.length === 1 ? "" : "s"}
+                </span>
+              </div>
+
+              {selectedSubmission.status_history && selectedSubmission.status_history.length > 0 ? (
+                <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {selectedSubmission.status_history.map((entry, index) => (
+                    <li key={`${entry.timestamp}-${index}`} className="rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] p-3">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--text-tertiary)]">
+                        <time dateTime={entry.timestamp}>{formatRelativeTime(entry.timestamp)}</time>
+                        <span className="uppercase tracking-[0.06em]">{entry.changedBy}</span>
+                      </div>
+                      <p className="mt-2 text-[13px] font-medium text-[var(--text-primary)]">
+                        {entry.previousStatus} <span className="text-[var(--text-tertiary)]">to</span> {entry.newStatus}
+                      </p>
+                      {entry.note && <p className="mt-1 text-[12px] text-[var(--text-secondary)]">{entry.note}</p>}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-3 text-[12px] text-[var(--text-secondary)]">No status transitions have been recorded for this complaint.</p>
+              )}
+            </section>
+          )}
+
           {/* PAGINATION BAR */}
           <div className="p-3 px-4 border-t border-[var(--border-dim)] flex items-center justify-between bg-[var(--bg-subtle)]">
             <span className="text-[12px] text-[var(--text-tertiary)] font-mono">
@@ -995,6 +1073,7 @@ export default function DashboardPage({
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </Suspense>
   );
 }

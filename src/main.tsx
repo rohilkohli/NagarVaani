@@ -4,6 +4,7 @@ import '@/lib/i18n';
 import App from './App.tsx';
 import { ThemeProvider } from '@/lib/themeContext';
 import { LanguageProvider } from '@/lib/languageContext';
+import AccessibilityPrompt from '@/components/shared/AccessibilityPrompt';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -11,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <LanguageProvider>
         <App />
+        <AccessibilityPrompt />
       </LanguageProvider>
     </ThemeProvider>
   </StrictMode>,
@@ -23,4 +25,3 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.log('SW registration failed:', err));
   });
 }
-

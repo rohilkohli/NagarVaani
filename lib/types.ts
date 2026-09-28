@@ -30,6 +30,13 @@ export interface Submission {
   department_name?: string;
   sla_deadline?: string | Date;
   sla_status?: 'on_track' | 'at_risk' | 'breached' | string;
+  status_history?: Array<{
+    timestamp: string;
+    previousStatus: string;
+    newStatus: string;
+    changedBy: 'admin' | 'system' | 'automation';
+    note?: string;
+  }>;
 }
 
 export interface PriorityRecommendation {

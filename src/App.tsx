@@ -1,16 +1,23 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { lazy, Suspense, useState, useEffect } from "react";
 import Sidebar, { NavTab } from "@/components/shared/Sidebar";
 import Header, { TimeRange } from "@/components/shared/Header";
-import DashboardPage from "@/app/dashboard/page";
-import CitizenPage from "@/app/citizen/page";
-import TrackComplaint from "@/components/citizen/TrackComplaint";
+import AdminGate from "@/components/shared/AdminGate";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { useTheme } from "@/lib/themeContext";
 import { Submission, ComplaintCategory } from "@/lib/types";
+import { getRuntimeMode, isDemoMode } from "@/lib/appMode";
+
+const DashboardPage = lazy(() => import("@/app/dashboard/page"));
+const CitizenPage = lazy(() => import("@/app/citizen/page"));
+const TrackComplaint = lazy(() => import("@/components/citizen/TrackComplaint"));
+
+function RouteFallback() {
+  return <div className="min-h-[40vh] animate-pulse rounded-[var(--radius-md)] bg-[var(--bg-surface)]" />;
+}
 
 export default function App() {
   const { theme } = useTheme();
@@ -92,25 +99,29 @@ export default function App() {
   };
 
   const handleSeedData = async () => {
-    for (const item of ALL_SEED_SUBMISSIONS) {
-      await addDoc(collection(db, "submissions"), {
-        text: item.text,
-        language: item.language,
-        category: item.category,
-        urgency: item.urgency,
-        summary_english: item.summary_english,
-        district: item.district,
-        state: item.state,
-        country: item.country,
-        lat: item.lat,
-        lng: item.lng,
-        created_at: item.created_at.toISOString(),
-        status: item.status,
-      });
+    if (isDemoMode()) {
+      setToastMsg("⚠️ Demo mode is active. Configure live Firebase credentials before seeding live data.");
+      setTimeout(() => setToastMsg(null), 5000);
+      return;
+    }
+
+    const token = sessionStorage.getItem("nv_dashboard_token");
+    const response = await fetch("/api/admin/seed", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      throw new Error("Seed request failed");
     }
   };
 
   const handleResetDemo = async () => {
+    if (isDemoMode()) {
+      setToastMsg("⚠️ Demo mode is active. Configure Firebase before seeding live data.");
+      setTimeout(() => setToastMsg(null), 5000);
+      return;
+    }
+
     try {
       if (typeof window !== "undefined") {
         localStorage.removeItem('nv_seeded');
@@ -128,6 +139,11 @@ export default function App() {
 
   // Real-time Firestore sync
   useEffect(() => {
+    if (isDemoMode()) {
+      setLiveSubmissions([]);
+      return;
+    }
+
     try {
       const unsubscribe = onSnapshot(
         collection(db, "submissions"),
@@ -151,6 +167,7 @@ export default function App() {
                 photo_url: d.photo_url || undefined,
                 created_at: d.created_at ? new Date(d.created_at) : new Date(),
                 status: (d.status as Submission["status"]) || "classified",
+                status_history: Array.isArray(d.status_history) ? d.status_history : [],
                 upvotes: Number(d.upvotes) || 0,
                 department_id: d.department_id || undefined,
                 department_name: d.department_name || undefined,
@@ -178,7 +195,7 @@ export default function App() {
 
     const headers = [
       'ID', 'Category', 'District', 'State', 'Country',
-      'Urgency', 'Summary', 'Language', 'Date', 'Status'
+      'Urgency', 'Summary', 'Language', 'Date', 'Status', 'AuditHistory'
     ];
 
     const rows = data.map(s => [
@@ -193,7 +210,8 @@ export default function App() {
       s.created_at instanceof Date 
         ? s.created_at.toISOString().split('T')[0]
         : new Date(s.created_at).toISOString().split('T')[0],
-      s.status
+      s.status,
+      `"${JSON.stringify(s.status_history || []).replace(/"/g, "'")}"`
     ]);
 
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
@@ -235,6 +253,10 @@ export default function App() {
 
   // FIX 1 — Auto-seed on first dashboard load
   useEffect(() => {
+    if (isDemoMode()) {
+      return;
+    }
+
     const hasSeeded = localStorage.getItem('nv_seeded');
     if (!hasSeeded) {
       handleSeedData()
@@ -244,7 +266,6 @@ export default function App() {
           setTimeout(() => setToastMsg(null), 5000);
         })
         .catch(() => {
-          // Don't set the flag — allow retry on next load
           console.log("Seed will retry on next load when Firebase is configured");
         });
     }
@@ -344,13 +365,15 @@ export default function App() {
           </div>
         )}
 
-        <CitizenPage
-          onNavigateToDashboard={() => handleSelectTab("overview")}
-          onNavigateToTrack={(id) => {
-            setCurrentTrackId(id);
-            handleSelectTab("track", id);
-          }}
-        />
+        <Suspense fallback={<RouteFallback />}>
+          <CitizenPage
+            onNavigateToDashboard={() => handleSelectTab("overview")}
+            onNavigateToTrack={(id) => {
+              setCurrentTrackId(id);
+              handleSelectTab("track", id);
+            }}
+          />
+        </Suspense>
       </div>
     );
   }
@@ -359,21 +382,23 @@ export default function App() {
   if (activeTab === "track") {
     return (
       <div className="transition-colors duration-300 min-h-screen bg-[var(--panel-bg)]">
-        <TrackComplaint
-          trackingId={currentTrackId}
-          onNavigateToCitizen={() => handleSelectTab("citizen")}
-          onNavigateToDashboard={() => handleSelectTab("overview")}
-          onSelectTrackId={(newId) => {
-            setCurrentTrackId(newId);
-            window.history.pushState({}, "", `/?track=${encodeURIComponent(newId)}`);
-          }}
-        />
+        <Suspense fallback={<RouteFallback />}>
+          <TrackComplaint
+            trackingId={currentTrackId}
+            onNavigateToCitizen={() => handleSelectTab("citizen")}
+            onNavigateToDashboard={() => handleSelectTab("overview")}
+            onSelectTrackId={(newId) => {
+              setCurrentTrackId(newId);
+              window.history.pushState({}, "", `/?track=${encodeURIComponent(newId)}`);
+            }}
+          />
+        </Suspense>
       </div>
     );
   }
 
   // 2. POLICYMAKER DASHBOARD (Dark-first Linear bento grid layout with 220px fixed sidebar)
-  return (
+  const dashboardShell = (
     <div className="transition-colors duration-300 min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] flex font-sans antialiased selection:bg-[rgba(99,102,241,0.25)] selection:text-white">
       {/* DESKTOP FIXED LEFT SIDEBAR (220px) */}
       <div className="hidden md:block w-[220px] shrink-0">
@@ -433,16 +458,24 @@ export default function App() {
           onTimeRangeChange={setSelectedTimeRange}
         />
 
+        {isDemoMode() && (
+          <div className="mx-4 mt-4 rounded-[var(--radius-md)] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Demo mode: Firebase is not configured for live submissions, so the dashboard is using local fallback data only.
+          </div>
+        )}
+
         {/* MAIN BODY CONTAINER WITH KEY TO TRIGGER PAGE TRANSITION */}
         <main
           key={activeTab}
           className="page-transition-enter flex-1 p-4 sm:p-6 lg:p-6 w-full max-w-[1600px] mx-auto"
         >
-          <DashboardPage
-            activeTab={activeTab as any}
-            onSelectTab={handleSelectTab}
-            selectedTimeRange={selectedTimeRange}
-          />
+          <Suspense fallback={<RouteFallback />}>
+            <DashboardPage
+              activeTab={activeTab as any}
+              onSelectTab={handleSelectTab}
+              selectedTimeRange={selectedTimeRange}
+            />
+          </Suspense>
         </main>
 
         {/* RESTRAINED FOOTER */}
@@ -467,5 +500,11 @@ export default function App() {
         )}
       </div>
     </div>
+  );
+
+  return (
+    <AdminGate>
+      {dashboardShell}
+    </AdminGate>
   );
 }

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: development
+      GEMINI_API_KEY: ci-gemini-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check:env
+        env:
+          NODE_ENV: development
+          GEMINI_API_KEY: ci-gemini-key
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start server
+        run: |
+          NODE_ENV=development GEMINI_API_KEY=ci-gemini-key PORT=3000 npm start > /tmp/nagarvaani.log 2>&1 &
+          echo $! > /tmp/nagarvaani.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/nagarvaani.log
+          exit 1
+      - run: npm run smoke -- http://127.0.0.1:3000
+      - if: always()
+        run: kill "$(cat /tmp/nagarvaani.pid)" 2>/dev/null || true

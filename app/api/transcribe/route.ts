@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { jsonResponse, getErrorMessage } from "@/lib/api";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function POST(req: Request) {
   try {
@@ -8,10 +9,17 @@ export async function POST(req: Request) {
     const audioFile = formData.get("audio") as Blob | File | null;
 
     if (!audioFile) {
-      return new Response(
-        JSON.stringify({ error: "Missing audio file in request formData ('audio')" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Missing audio file in request formData ('audio')" }, 400);
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return jsonResponse({
+        error: "GEMINI_API_KEY is not configured.",
+        original_text: "",
+        english_translation: "",
+        language_detected: "Unknown",
+        confidence: 0,
+      }, 500);
     }
 
     // Convert audio file / blob to Buffer and Base64
@@ -65,32 +73,20 @@ Return JSON strictly in this format:
       parsedData = JSON.parse(cleaned);
     }
 
-    return new Response(
-      JSON.stringify({
-        original_text: parsedData.original_text || "",
-        english_translation: parsedData.english_translation || parsedData.original_text || "",
-        language_detected: parsedData.language_detected || "English",
-        confidence: typeof parsedData.confidence === "number" ? parsedData.confidence : 0.95,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return jsonResponse({
+      original_text: parsedData.original_text || "",
+      english_translation: parsedData.english_translation || parsedData.original_text || "",
+      language_detected: parsedData.language_detected || "English",
+      confidence: typeof parsedData.confidence === "number" ? parsedData.confidence : 0.95,
+    });
   } catch (error: any) {
     console.error("Transcription API Error:", error);
-    return new Response(
-      JSON.stringify({
-        error: error?.message || "Failed to transcribe audio",
-        original_text: "",
-        english_translation: "",
-        language_detected: "Unknown",
-        confidence: 0,
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return jsonResponse({
+      error: getErrorMessage(error),
+      original_text: "",
+      english_translation: "",
+      language_detected: "Unknown",
+      confidence: 0,
+    }, 500);
   }
 }

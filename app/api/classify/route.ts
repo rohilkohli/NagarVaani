@@ -1,6 +1,7 @@
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { GoogleGenAI, Type } from "@google/genai";
+import { jsonResponse, getErrorMessage, safeParseJson } from "@/lib/api";
 
 export async function POST(req: Request) {
   let submissionId = "";
@@ -10,10 +11,7 @@ export async function POST(req: Request) {
     const inputText = body.text || "";
 
     if (!submissionId && !inputText) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Either submissionId or text is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: false, error: "Either submissionId or text is required" }, 400);
     }
 
     // STEP 1 — Fetch the submission from Firestore using the submissionId if provided
@@ -66,10 +64,7 @@ export async function POST(req: Request) {
         }
       }
 
-      return new Response(
-        JSON.stringify({ success: true, classification: fallbackResult }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, classification: fallbackResult });
     }
 
     const ai = new GoogleGenAI({
@@ -136,7 +131,7 @@ Return this exact JSON structure:
     });
 
     // STEP 3 — Parse the JSON response
-    const result = JSON.parse(response.text || "{}");
+    const result = safeParseJson<any>(response.text || "{}", {});
 
     // Validate category
     const validCategories = ["roads", "water", "electricity", "sanitation", "health", "education", "other"];
@@ -195,12 +190,9 @@ Return this exact JSON structure:
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error?.message || "Classification failed",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      success: false,
+      error: getErrorMessage(error),
+    }, 500);
   }
 }

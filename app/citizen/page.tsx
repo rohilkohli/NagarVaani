@@ -27,8 +27,7 @@ import {
   Navigation,
 } from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
-import { db, storage } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { queueOfflineSubmission } from "@/lib/offlineQueue";
 import VoiceInput from "@/components/citizen/VoiceInput";
@@ -38,6 +37,8 @@ import RealCitizenMap from "@/components/citizen/RealCitizenMap";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import { useLanguage, SUPPORTED_LANGUAGES, LanguageCode } from "@/lib/languageContext";
 import { COUNTRIES_DATA, getStatesForCountry, getDistrictsForState, detectLocationFromGPS, getLocationCoordinates } from "@/lib/locations";
+import { validateComplaintPayload } from "@/lib/validation";
+import { isDemoMode } from "@/lib/appMode";
 
 interface CitizenPageProps {
   onNewSubmission?: (sub: Submission) => void;
@@ -321,6 +322,20 @@ export default function CitizenPage({
 
     if (hasError) return;
 
+    const validated = validateComplaintPayload({
+      text,
+      district,
+      country,
+      state,
+      language: detectedLanguage,
+      summary_english: text,
+    });
+
+    if (!validated.isValid) {
+      setSubmissionError(validated.errors[0]);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -338,38 +353,12 @@ export default function CitizenPage({
         }
       }
 
-      // 2. Classify complaint using Gemini API
-      let category: ComplaintCategory = "roads";
-      let urgency: 1 | 2 | 3 | 4 | 5 = 3;
-      let summaryEnglish: string = text;
+      // Classification runs asynchronously after intake; these values are initial routing defaults.
+      const category: ComplaintCategory = validated.normalized.category as ComplaintCategory;
+      const urgency: 1 | 2 | 3 | 4 | 5 = validated.normalized.urgency as 1 | 2 | 3 | 4 | 5;
+      const summaryEnglish = validated.normalized.summary || text;
 
-      try {
-        const classifyRes = await fetch("/api/classify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            language: detectedLanguage,
-            district,
-            state: country === "India" ? state : "",
-            country,
-          }),
-        });
-
-        if (classifyRes.ok) {
-          const classifyData = await classifyRes.json();
-          if (classifyData.category) category = classifyData.category;
-          if (classifyData.urgency) {
-            const rawUrg = Math.min(5, Math.max(1, Math.round(Number(classifyData.urgency) || 3))) as 1 | 2 | 3 | 4 | 5;
-            urgency = rawUrg;
-          }
-          if (classifyData.summary_english) summaryEnglish = classifyData.summary_english;
-        }
-      } catch (err) {
-        console.warn("Gemini classify notice:", err);
-      }
-
-      // 3. Accurate coordinates for mapping & GIS analytics
+      // Accurate coordinates for mapping & GIS analytics
       const geoCoords = detectedCoords || getLocationCoordinates(country, state, district);
       const finalLat = Number(geoCoords.lat.toFixed(4));
       const finalLng = Number(geoCoords.lng.toFixed(4));
@@ -377,19 +366,20 @@ export default function CitizenPage({
       const trackingCode = `NV-${Date.now().toString().slice(-6)}`;
       const newRecord: Submission = {
         id: trackingCode,
-        text: text.trim(),
-        language: detectedLanguage,
-        category,
-        urgency,
-        summary_english: summaryEnglish,
-        district: district.trim(),
-        state: country === "India" ? state : "",
-        country,
+        text: validated.normalized.text,
+        language: validated.normalized.language,
+        category: validated.normalized.category as ComplaintCategory,
+        urgency: validated.normalized.urgency as 1 | 2 | 3 | 4 | 5,
+        summary_english: validated.normalized.summary || summaryEnglish,
+        district: validated.normalized.district,
+        state: validated.normalized.state || (country === "India" ? state : ""),
+        country: validated.normalized.country,
         lat: finalLat,
         lng: finalLng,
         photo_url: uploadedPhotoUrl || undefined,
         created_at: new Date(),
-        status: "classified",
+        status: "pending",
+        status_history: [],
       };
 
       // Offline detection & queueing
@@ -432,28 +422,21 @@ export default function CitizenPage({
         return;
       }
 
-      // 4. Save to Firestore
-      try {
-        const docRef = await addDoc(collection(db, "submissions"), {
-          id: trackingCode,
-          text: newRecord.text,
-          language: newRecord.language,
-          category: newRecord.category,
-          urgency: newRecord.urgency,
-          summary_english: newRecord.summary_english,
-          district: newRecord.district,
-          state: newRecord.state,
-          country: newRecord.country,
-          lat: newRecord.lat,
-          lng: newRecord.lng,
-          photo_url: newRecord.photo_url || null,
-          created_at: newRecord.created_at.toISOString(),
-          status: newRecord.status,
-          upvotes: 0,
+      // 4. Persist through the backend so validation, rate limits, and audit rules stay centralized.
+      if (!isDemoMode()) {
+        const persistRes = await fetch("/api/submissions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": trackingCode,
+          },
+          body: JSON.stringify(newRecord),
         });
-        newRecord.firestoreId = docRef.id;
-      } catch (dbErr) {
-        console.warn("Firestore save notice:", dbErr);
+        const persistData = await persistRes.json();
+        if (!persistRes.ok || !persistData.success) {
+          throw new Error(persistData.error || "Submission could not be saved.");
+        }
+        newRecord.firestoreId = persistData.firestoreId;
       }
 
       setIsSavedOffline(false);
@@ -606,28 +589,20 @@ export default function CitizenPage({
           console.warn("Background classify notice:", classifyErr);
         }
 
-        // Firestore document creation
-        try {
-          const docRef = await addDoc(collection(db, "submissions"), {
-            id: trackingCode,
-            text: newRecord.text,
-            language: newRecord.language,
-            category: newRecord.category,
-            urgency: newRecord.urgency,
-            summary_english: newRecord.summary_english,
-            district: newRecord.district,
-            state: newRecord.state,
-            country: newRecord.country,
-            lat: newRecord.lat,
-            lng: newRecord.lng,
-            photo_url: finalPhotoUrl || null,
-            created_at: newRecord.created_at.toISOString(),
-            status: newRecord.status,
-            upvotes: 0,
+        if (!isDemoMode()) {
+          const persistRes = await fetch("/api/submissions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": trackingCode,
+            },
+            body: JSON.stringify({ ...newRecord, photo_url: finalPhotoUrl || undefined }),
           });
-          newRecord.firestoreId = docRef.id;
-        } catch (dbErr) {
-          console.warn("Firestore save notice:", dbErr);
+          const persistData = await persistRes.json();
+          if (!persistRes.ok || !persistData.success) {
+            throw new Error(persistData.error || "Submission could not be saved.");
+          }
+          newRecord.firestoreId = persistData.firestoreId;
         }
       } catch (bgErr) {
         console.warn("Background sync error:", bgErr);
