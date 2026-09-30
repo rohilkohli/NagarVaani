@@ -617,3 +617,109 @@ body {
     animation: shimmerLtr 1.5s infinite linear;
   }
 }
+
+/* ─── 11. Mobile-first utilities (360px viewport baseline) ─────────────────── */
+
+/* Prevent ANY horizontal scroll on the root */
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* Enforce a 44px minimum tap target on all interactive elements on small screens.
+   This keeps Apple HIG / WCAG 2.5.5 compliance without changing desktop layouts. */
+@media (max-width: 640px) {
+  button,
+  [role="button"],
+  a,
+  input[type="submit"],
+  input[type="button"],
+  label[for] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Prevent input zoom on iOS (font-size < 16px triggers zoom) */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Make sure padded cards don't overflow on 360px */
+  .card,
+  [class*="p-4"],
+  [class*="p-6"] {
+    box-sizing: border-box;
+  }
+}
+
+/* ─── 12. Skeleton loading cards ───────────────────────────────────────────── */
+
+/* Base skeleton block — use as a children of a pulse wrapper */
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-subtle) 50%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerLtr 1.6s ease-in-out infinite;
+}
+
+/* Skeleton text line helper */
+.skeleton-text {
+  height: 14px;
+  border-radius: 4px;
+}
+
+.skeleton-text--lg {
+  height: 20px;
+}
+
+.skeleton-text--sm {
+  height: 10px;
+}
+
+/* Full card skeleton */
+.skeleton-card {
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dim);
+  padding: var(--space-4);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Pulse-dot animation (used in demo banner) */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.pulse-dot {
+  animation: pulseDot 1.8s ease-in-out infinite;
+}
+
+/* ─── 13. Demo banner ───────────────────────────────────────────────────────── */
+
+.demo-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, 0.3);   /* amber-500/30 */
+  background: rgba(245, 158, 11, 0.08);          /* amber-500/8 */
+  font-size: 13px;
+  color: #fcd34d;                                /* amber-300 */
+  line-height: 1.4;
+}
+
+.demo-banner strong {
+  color: #fbbf24;                                /* amber-400 */
+  font-weight: 600;
+}

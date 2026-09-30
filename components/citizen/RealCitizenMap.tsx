@@ -37,6 +37,7 @@ import { getLocationCoordinates, LocationCoordinates, detectLocationFromGPS } fr
 import { useLanguage } from "@/lib/languageContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
+import { isDemoMode } from "@/lib/appMode";
 
 interface RealCitizenMapProps {
   country: string;
@@ -192,8 +193,11 @@ export default function RealCitizenMap({
     }
   }, [activePosition]);
 
-  // Fetch nearby reports from Firestore
+  // Fetch nearby reports from Firestore (live mode only)
   useEffect(() => {
+    if (isDemoMode()) {
+      return;
+    }
     let unsubscribe = () => {};
     try {
       const q = query(collection(db, "submissions"), limit(30));

@@ -16,7 +16,14 @@ const CitizenPage = lazy(() => import("./pages/CitizenPage.tsx"));
 const TrackComplaint = lazy(() => import("@/components/citizen/TrackComplaint"));
 
 function RouteFallback() {
-  return <div className="min-h-[40vh] animate-pulse rounded-[var(--radius-md)] bg-[var(--bg-surface)]" />;
+  return (
+    <div className="max-w-[600px] mx-auto px-4 sm:px-6 py-8 space-y-4" role="status" aria-label="Loading view">
+      <div className="h-7 w-2/3 skeleton-shimmer rounded-[var(--radius-md)]" />
+      <div className="h-4 w-1/2 skeleton-shimmer rounded-[var(--radius-md)]" />
+      <div className="h-44 w-full skeleton-shimmer rounded-[var(--radius-md)]" />
+      <div className="h-12 w-full skeleton-shimmer rounded-[var(--radius-md)]" />
+    </div>
+  );
 }
 
 export default function App() {
@@ -28,6 +35,19 @@ export default function App() {
       return urlParams.get("track") || "NV-849201";
     }
     return "NV-849201";
+  });
+
+  const DEMO = isDemoMode();
+
+  // In demo mode show a landing selector before any view
+  const [showLanding, setShowLanding] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname;
+      const hasTrack = new URLSearchParams(window.location.search).get("track");
+      // Skip landing if navigating directly to a specific path
+      if (hasTrack || path === "/citizen" || path === "/dashboard") return false;
+    }
+    return DEMO && window.location.pathname === "/";
   });
 
   const [activeTab, setActiveTab] = useState<NavTab>(() => {
@@ -323,14 +343,79 @@ export default function App() {
     };
   }, [isMobileMenuOpen]);
 
+  // ── Demo mode: landing selector ─────────────────────────────────────────
+  if (DEMO && showLanding) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex flex-col items-center justify-center gap-8 p-6">
+        {/* Demo / sandbox badge */}
+        <div className="absolute top-4 right-4 flex items-center gap-2 rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-[12px] font-semibold text-amber-300">Demo / sandbox — no real data</span>
+        </div>
+
+        {/* Logo */}
+        <div className="text-center">
+          <div className="text-5xl mb-3">🏛️</div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">NagarVaani</h1>
+          <p className="mt-2 text-[var(--text-secondary)] text-[15px] max-w-sm mx-auto">
+            Multilingual AI civic infrastructure platform — solving for India, with BRICS extension
+          </p>
+        </div>
+
+        {/* Two entry-point buttons */}
+        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+          <button
+            type="button"
+            id="landing-citizen-btn"
+            onClick={() => { setShowLanding(false); setActiveTab("citizen"); window.history.pushState({}, "", "/citizen"); }}
+            className="flex-1 flex flex-col items-center gap-3 p-6 rounded-[var(--radius-lg)] bg-[#111118] border border-[rgba(255,255,255,0.1)] hover:border-[var(--brand-primary)] hover:bg-[var(--brand-subtle)] transition-all cursor-pointer text-left group"
+          >
+            <span className="text-3xl">📣</span>
+            <div>
+              <div className="font-semibold text-white text-[15px] group-hover:text-[var(--brand-secondary)] transition-colors">Citizen portal</div>
+              <div className="text-[13px] text-[var(--text-secondary)] mt-0.5">Submit a complaint · track your report</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            id="landing-dashboard-btn"
+            onClick={() => { setShowLanding(false); setActiveTab("overview"); window.history.pushState({}, "", "/dashboard"); }}
+            className="flex-1 flex flex-col items-center gap-3 p-6 rounded-[var(--radius-lg)] bg-[#111118] border border-[rgba(255,255,255,0.1)] hover:border-[var(--brand-primary)] hover:bg-[var(--brand-subtle)] transition-all cursor-pointer text-left group"
+          >
+            <span className="text-3xl">📊</span>
+            <div>
+              <div className="font-semibold text-white text-[15px] group-hover:text-[var(--brand-secondary)] transition-colors">Policymaker dashboard <span className="text-[11px] font-normal text-amber-400">(demo)</span></div>
+              <div className="text-[13px] text-[var(--text-secondary)] mt-0.5">Read-only · pre-loaded seed data</div>
+            </div>
+          </button>
+        </div>
+
+        <p className="text-[12px] text-[var(--text-tertiary)] text-center max-w-xs">
+          Submissions stay in memory for this session only — nothing is written to Firebase.
+        </p>
+      </div>
+    );
+  }
+
   // 1. CITIZEN PORTAL (Full-width single column, no sidebar, warm light aesthetic)
   if (activeTab === "citizen") {
     return (
       <div className="transition-colors duration-300 min-h-screen flex flex-col">
+        {/* Persistent demo sandbox banner */}
+        {DEMO && (
+          <div className="demo-banner w-full justify-center text-center">
+            <span className="pulse-dot" />
+            <span>
+              <strong>Demo data / sandbox</strong> — submissions stay in memory for this instance only; nothing writes to Firestore or Storage.
+            </span>
+          </div>
+        )}
+
         {/* Offline banner (show in citizen portal only): */}
         {!isOnline && (
-          <div className="w-full bg-amber-500 text-white text-center py-2 px-4 text-[13px] font-medium z-50 sticky top-0 shadow-xs">
-            📡 You're offline. Your complaint will be saved and submitted when you reconnect.
+          <div className="w-full bg-amber-500 text-white text-center py-2 px-4 text-[13px] font-medium z-50 sticky top-0 shadow-xs" role="status">
+            📡 You're offline. Your complaint will be queued locally and submitted automatically when you reconnect.
           </div>
         )}
 
@@ -459,8 +544,11 @@ export default function App() {
         />
 
         {isDemoMode() && (
-          <div className="mx-4 mt-4 rounded-[var(--radius-md)] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Demo mode: Firebase is not configured for live submissions, so the dashboard is using local fallback data only.
+          <div className="mx-4 mt-4 rounded-[var(--radius-md)] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-200 flex items-center gap-3">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span>
+              <strong>Demo data / sandbox</strong> — read-only dashboard with in-memory sandbox; citizen submissions are classified by Gemini (or rule-based fallback) and never written to Firestore or Storage.
+            </span>
           </div>
         )}
 
@@ -481,13 +569,22 @@ export default function App() {
         {/* RESTRAINED FOOTER */}
         <footer className="border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] py-3 px-6 text-center text-[12px] text-[var(--text-tertiary)]">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-center">
               <span className="font-semibold text-[var(--text-secondary)]">NagarVaani</span>
               <span>•</span>
               <span>Multilingual AI Infrastructure Intelligence for BRICS Nations</span>
+              <span>•</span>
+              <a
+                href="/data/SOURCES.md"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-[var(--brand-secondary)] hover:underline"
+              >
+                Data sources (data/SOURCES.md)
+              </a>
             </div>
             <div className="font-mono text-[11px] text-[var(--text-tertiary)]">
-              Gemini 2.5 Flash · Google AI
+              Census 2011 · NITI Aayog · Gemini 2.5 Flash
             </div>
           </div>
         </footer>
@@ -501,6 +598,11 @@ export default function App() {
       </div>
     </div>
   );
+
+  // In demo mode the dashboard is always visible — no login gate
+  if (DEMO) {
+    return <>{dashboardShell}</>;
+  }
 
   return (
     <AdminGate>

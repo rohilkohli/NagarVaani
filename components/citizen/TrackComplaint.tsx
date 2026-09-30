@@ -15,12 +15,15 @@ import {
   Check,
   Building2,
   FileText,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import ThemeToggle from "@/components/shared/ThemeToggle";
+import { isDemoMode } from "@/lib/appMode";
 
 interface TrackComplaintProps {
   trackingId?: string;
@@ -66,6 +69,51 @@ export default function TrackComplaint({
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [ttsLoading, setTtsLoading] = useState<boolean>(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  // Check if Cloud TTS is enabled via env feature flag
+  useEffect(() => {
+    fetch("/api/tts/config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.enabled) setTtsEnabled(true);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handlePlayTTS = async () => {
+    if (!submission) return;
+    if (isSpeaking && audioRef.current) {
+      audioRef.current.pause();
+      setIsSpeaking(false);
+      return;
+    }
+
+    setTtsLoading(true);
+    try {
+      const statusSummary = `Grievance reference ${submission.id}. Status is ${submission.status}. Category: ${submission.category}. Urgency level ${submission.urgency} out of 5. Location: ${submission.district}, ${submission.state}. Summary: ${submission.summary_english || submission.text}`;
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: statusSummary, languageCode: "en-IN" }),
+      });
+      const data = await res.json();
+      if (data.audioBase64) {
+        const audio = new Audio(`data:${data.mimeType || "audio/mp3"};base64,${data.audioBase64}`);
+        audioRef.current = audio;
+        audio.onended = () => setIsSpeaking(false);
+        audio.play();
+        setIsSpeaking(true);
+      }
+    } catch (err) {
+      console.warn("TTS playback note:", err);
+    } finally {
+      setTtsLoading(false);
+    }
+  };
 
   // Sync search input when prop changes
   useEffect(() => {
@@ -82,11 +130,32 @@ export default function TrackComplaint({
     async function fetchComplaint() {
       const cleanId = (trackingId || "NV-849201").trim();
 
-      // 1. Try real Firestore query first
-      try {
-        const rawSuffix = cleanId.replace(/^NV-/i, "");
-        const submissionsCol = collection(db, "submissions");
-        const snapshot = await getDocs(submissionsCol);
+      if (isDemoMode()) {
+        try {
+          const demoRes = await fetch("/api/demo/submissions");
+          if (demoRes.ok) {
+            const payload = await demoRes.json();
+            const found = (payload.submissions || []).find(
+              (s: any) => s.id && s.id.toUpperCase() === cleanId.toUpperCase()
+            );
+            if (found && isMounted) {
+              setSubmission({
+                ...found,
+                created_at: new Date(found.created_at || Date.now()),
+              });
+              setIsLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // Fall through to seed match
+        }
+      } else {
+        // 1. Try real Firestore query first
+        try {
+          const rawSuffix = cleanId.replace(/^NV-/i, "");
+          const submissionsCol = collection(db, "submissions");
+          const snapshot = await getDocs(submissionsCol);
         
         let foundDoc: Submission | null = null;
         snapshot.forEach((docSnap) => {
@@ -135,13 +204,15 @@ export default function TrackComplaint({
           setIsLoading(false);
           return;
         }
-      } catch (err) {
-        console.warn("Firestore lookup note:", err);
+        } catch (err) {
+          console.warn("Firestore lookup note:", err);
+        }
       }
 
       // 2. Try server endpoint
-      try {
-        const res = await fetch(`/api/track/${encodeURIComponent(cleanId)}`);
+      if (!isDemoMode()) {
+        try {
+          const res = await fetch(`/api/track/${encodeURIComponent(cleanId)}`);
         if (res.ok) {
           const resData = await res.json();
           if (resData.submission && isMounted) {
@@ -153,8 +224,9 @@ export default function TrackComplaint({
             return;
           }
         }
-      } catch (apiErr) {
-        console.warn("API track lookup fallback:", apiErr);
+        } catch (apiErr) {
+          console.warn("API track lookup fallback:", apiErr);
+        }
       }
 
       // 3. Check seed database as secondary fallback if Firestore has not been seeded yet
@@ -273,13 +345,35 @@ export default function TrackComplaint({
               </h2>
             </div>
 
-            <div className="bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/30 rounded-[12px] px-4 py-2 text-right">
-              <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--brand-secondary)] block">
-                REFERENCE CODE
-              </span>
-              <span className="font-mono text-[18px] font-bold text-[var(--brand-secondary)] select-all">
-                {submission?.id || currentTrackingId}
-              </span>
+            <div className="flex items-center gap-3">
+              {ttsEnabled && submission && (
+                <button
+                  type="button"
+                  id="tts-play-button"
+                  onClick={handlePlayTTS}
+                  disabled={ttsLoading}
+                  className="h-10 px-3.5 rounded-[12px] border border-[var(--brand-primary)]/40 bg-[var(--brand-subtle)] hover:bg-[var(--brand-primary)]/15 text-[var(--brand-secondary)] text-[12px] font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                  title="Listen to status via Cloud Text-to-Speech"
+                >
+                  {ttsLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#6366f1]" />
+                  ) : isSpeaking ? (
+                    <VolumeX className="w-4 h-4 text-rose-500" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-[#6366f1]" />
+                  )}
+                  <span>{ttsLoading ? "Loading Audio..." : isSpeaking ? "Stop" : "Listen (TTS)"}</span>
+                </button>
+              )}
+
+              <div className="bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/30 rounded-[12px] px-4 py-2 text-right">
+                <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--brand-secondary)] block">
+                  REFERENCE CODE
+                </span>
+                <span className="font-mono text-[18px] font-bold text-[var(--brand-secondary)] select-all">
+                  {submission?.id || currentTrackingId}
+                </span>
+              </div>
             </div>
           </div>
 

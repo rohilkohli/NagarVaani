@@ -19,6 +19,7 @@ import { Submission, ComplaintCategory } from "@/lib/types";
 import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, limit } from "firebase/firestore";
+import { isDemoMode } from "@/lib/appMode";
 
 interface NearYouPanelProps {
   district: string;
@@ -73,16 +74,17 @@ export default function NearYouPanel({
       const cleanDist = district.trim().toLowerCase();
 
       try {
-        // Query Firestore for matching district
-        const q = query(
-          collection(db, "submissions"),
-          where("district", "==", district.trim()),
-          limit(10)
-        );
-        const snapshot = await getDocs(q);
-
         let list: Submission[] = [];
-        if (!snapshot.empty) {
+        if (!isDemoMode()) {
+          // Query Firestore for matching district
+          const q = query(
+            collection(db, "submissions"),
+            where("district", "==", district.trim()),
+            limit(10)
+          );
+          const snapshot = await getDocs(q);
+
+          if (!snapshot.empty) {
           list = snapshot.docs.map((doc) => {
             const d = doc.data();
             return {
@@ -103,6 +105,7 @@ export default function NearYouPanel({
               upvotes: Number(d.upvotes) || 0,
             };
           });
+          }
         }
 
         // If firestore returned few/no results, merge or fallback to seed submissions

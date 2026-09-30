@@ -17,7 +17,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'hi', 'ta', 'mr', 'bn', 'te', 'pt', 'ru', 'zh', 'es', 'fr', 'ar'],
+    supportedLngs: Object.keys(TRANSLATIONS),
     interpolation: {
       escapeValue: false, // React already escapes values safely
     },

@@ -6,17 +6,22 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
   Users,
   Clock,
   Copy,
   Check,
-  Building2,
-  TrendingUp,
+  Info,
+  ArrowUpDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PriorityRecommendation, Submission } from "@/lib/types";
 import { getSLAStatus } from "@/lib/departments";
+import { isDemoMode } from "@/lib/appMode";
+import {
+  joinAndScoreClusters,
+  buildDeterministicRecommendations,
+  PRIORITY_FORMULA_TOOLTIP,
+} from "@/lib/priority";
 
 interface PriorityPanelProps {
   submissions?: Submission[];
@@ -26,112 +31,9 @@ interface PriorityPanelProps {
   onNavigateToReports?: (district: string, category: string) => void;
 }
 
-const RATIONALE_TEMPLATES: Record<string, (district: string, count: number, urgency: number) => string> = {
-  roads: (district: string, count: number, urgency: number) =>
-    `${count} citizen reports from ${district} document severe road damage with avg urgency ${urgency}/5. Damaged arterial corridors affect daily commutes and emergency vehicle access for ~${(count * 15000).toLocaleString()} residents.`,
-  water: (district: string, count: number, urgency: number) =>
-    `${district} residents logged ${count} water supply failures averaging urgency ${urgency}/5. Persistent contamination and distribution disruption pose acute public health risks.`,
-  electricity: (district: string, count: number, urgency: number) =>
-    `Grid instability in ${district} generated ${count} reports (urgency ${urgency}/5). Recurrent transformer trips stall local commerce and critical clinic backups.`,
-  sanitation: (district: string, count: number, urgency: number) =>
-    `${count} sanitation complaints from ${district} indicate major stormwater and drainage blockages (urgency ${urgency}/5), requiring urgent municipal dredging.`,
-  health: (district: string, count: number, urgency: number) =>
-    `Public health facilities in ${district} face ${count} urgent grievance reports (urgency ${urgency}/5), indicating PHC capacity gaps and emergency supply shortages.`,
-  education: (district: string, count: number, urgency: number) =>
-    `${count} school infrastructure grievances in ${district} (urgency ${urgency}/5) compromise classroom safety and learning continuity.`,
-  other: (district: string, count: number, urgency: number) =>
-    `${count} civic infrastructure complaints from ${district} require immediate municipal evaluation. Urgency index ${urgency}/5 mandates time-critical response.`,
-};
-
-const ACTION_TEMPLATES: Record<string, (district: string) => string> = {
-  roads: (district: string) => `Issue emergency resurfacing contract for top arterial corridors in ${district} within 14 days.`,
-  water: (district: string) => `Deploy rapid response water quality audit team to ${district} and inspect supply mains within 7 days.`,
-  electricity: (district: string) => `DISCOM to conduct transformer load audit in ${district} and install surge protection on critical feeders within 14 days.`,
-  sanitation: (district: string) => `Municipal corporation to deploy drain-clearance crew and CCTV inspection unit in ${district} within 48 hours.`,
-  health: (district: string) => `State health department to review ${district} PHC staffing and medicine stocks; submit emergency procurement within 14 days.`,
-  education: (district: string) => `District Education Officer to inspect flagged school buildings in ${district} and issue structural clearance within 21 days.`,
-  other: (district: string) => `District Collector to assign nodal officer for ${district} civic complaints and file resolution plan within 14 days.`,
-};
-
-const BRICS_TEMPLATES: Record<string, string> = {
-  roads: "Parallels rapid pavement resilience protocols active in São Paulo (Brazil) and Ekurhuleni (South Africa).",
-  water: "Matches municipal leak telemetry and distribution response deployed in Cape Town (South Africa) and Fortaleza (Brazil).",
-  electricity: "Smart grid distribution monitoring mirrors load-balancing pilots in Shanghai (China) and Novosibirsk (Russia).",
-  sanitation: "Real-time stormwater tracking aligns with urban resilience initiatives in Durban (South Africa) and Belo Horizonte (Brazil).",
-  health: "Primary healthcare supply forecasting reflects clinic protocols across Minas Gerais (Brazil) and Guangdong (China).",
-  education: "School facility structural audit protocols reflect district safety initiatives in Saint Petersburg (Russia) and Chengdu (China).",
-  other: "Municipal civic incident routing reflects standard BRICS urban resilience protocols.",
-};
-
 function generateLocalPriorities(subs: Submission[]): PriorityRecommendation[] {
-  const map = new Map<
-    string,
-    {
-      district: string;
-      state: string;
-      category: string;
-      count: number;
-      urgencies: number[];
-      upvotes: number[];
-    }
-  >();
-
-  for (const s of subs) {
-    const d = s.district || "Metropolitan Zone";
-    const c = (s.category || "roads").toLowerCase();
-    const key = `${d}__${c}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        district: d,
-        state: s.state || "National Sector",
-        category: c,
-        count: 0,
-        urgencies: [],
-        upvotes: [],
-      });
-    }
-    const g = map.get(key)!;
-    g.count += 1;
-    g.urgencies.push(Number(s.urgency) || 3);
-    g.upvotes.push(Number(s.upvotes) || 0);
-  }
-
-  const sorted = Array.from(map.values())
-    .map((g) => {
-      const avg_urgency = Number(
-        (g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(1)
-      );
-      const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
-      const weight_score = g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2);
-      return {
-        ...g,
-        avg_urgency,
-        total_upvotes,
-        weight_score,
-      };
-    })
-    .sort((a, b) => b.weight_score - a.weight_score)
-    .slice(0, 10);
-
-  return sorted.map((item, index) => {
-    const cat = item.category in RATIONALE_TEMPLATES ? item.category : "other";
-    const rationaleFn = RATIONALE_TEMPLATES[cat] || RATIONALE_TEMPLATES.other;
-    const actionFn = ACTION_TEMPLATES[cat] || ACTION_TEMPLATES.other;
-    const bricsParallel = BRICS_TEMPLATES[cat] || BRICS_TEMPLATES.other;
-
-    return {
-      rank: index + 1,
-      category: item.category,
-      district: item.district,
-      state: item.state,
-      count: item.count,
-      avg_urgency: item.avg_urgency,
-      ai_rationale: rationaleFn(item.district, item.count, item.avg_urgency),
-      estimated_population_affected: item.count * 15000,
-      recommended_action: actionFn(item.district),
-      brics_parallel: bricsParallel,
-    };
-  });
+  const joined = joinAndScoreClusters(subs);
+  return buildDeterministicRecommendations(joined);
 }
 
 export default function PriorityPanel({
@@ -142,12 +44,14 @@ export default function PriorityPanel({
   onNavigateToReports,
 }: PriorityPanelProps) {
   const [recommendations, setRecommendations] = useState<PriorityRecommendation[]>([]);
+  const [engineMode, setEngineMode] = useState<"gemini" | "rule-based">("rule-based");
   const [internalLoading, setInternalLoading] = useState<boolean>(true);
   const isLoading = propLoading || internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>("just now");
   const [expandedRank, setExpandedRank] = useState<number | null>(1);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
+  const [showRankComparison, setShowRankComparison] = useState<boolean>(false);
 
   // PART 3: Emerging Issue Detector
   // Find district+category combinations with 3+ submissions in the last 48h but < 5 total submissions overall
@@ -242,11 +146,12 @@ export default function PriorityPanel({
       setInternalLoading(true);
 
       try {
-        const res = await fetch("/api/prioritize", {
+        const endpoint = isDemoMode() ? "/api/demo/prioritize" : "/api/prioritize";
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(typeof window !== "undefined" && sessionStorage.getItem("nv_dashboard_token")
+            ...(!isDemoMode() && typeof window !== "undefined" && sessionStorage.getItem("nv_dashboard_token")
               ? { Authorization: `Bearer ${sessionStorage.getItem("nv_dashboard_token")}` }
               : {}),
           },
@@ -257,6 +162,7 @@ export default function PriorityPanel({
           const data = await res.json();
           if (data.success && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
             setRecommendations(data.recommendations);
+            setEngineMode(data.engine === "gemini" ? "gemini" : "rule-based");
             const d = new Date();
             setLastUpdated(
               d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -268,10 +174,12 @@ export default function PriorityPanel({
 
         const fallback = generateLocalPriorities(submissions);
         setRecommendations(fallback);
+        setEngineMode("rule-based");
         setLastUpdated("just now");
-      } catch (err: any) {
+      } catch (_err: any) {
         const fallback = generateLocalPriorities(submissions);
         setRecommendations(fallback);
+        setEngineMode("rule-based");
         setLastUpdated("just now");
       } finally {
         setInternalLoading(false);
@@ -289,7 +197,7 @@ export default function PriorityPanel({
   };
 
   const handleCopyAction = (item: PriorityRecommendation) => {
-    const text = `PRIORITY DIRECTIVE #${item.rank} [${item.category.toUpperCase()}]: ${item.district} (${item.state}) | Urgency: ${item.avg_urgency}/5 | Action: ${item.recommended_action}`;
+    const text = `PRIORITY DIRECTIVE #${item.rank} [${item.category.toUpperCase()}]: ${item.district} (${item.state}) | Need Score: ${item.need_weighted_score ?? "N/A"} | Urgency: ${item.avg_urgency}/5 | Scheme: ${item.relevant_scheme || "Municipal Budget"} | Action: ${item.recommended_action}`;
     navigator.clipboard.writeText(text);
     setCopiedRank(item.rank);
     setTimeout(() => setCopiedRank(null), 2000);
@@ -314,19 +222,47 @@ export default function PriorityPanel({
       {/* PREMIUM CARD HEADER */}
       <div className="p-3.5 px-4 border-b border-[var(--border-dim)] flex items-center justify-between shrink-0 bg-gradient-to-r from-[var(--bg-surface)] via-[var(--bg-subtle)] to-[var(--bg-surface)]">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="w-6 h-6 rounded-[var(--radius-sm)] bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/30 flex items-center justify-center text-[var(--brand-secondary)]">
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <h3 className="text-[14px] font-semibold text-[var(--text-primary)] tracking-tight">
-              AI Priority Engine
+              Need-Weighted Priority Engine
             </h3>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--green)] bg-[rgba(16,185,129,0.1)] px-1.5 py-0.5 rounded-[3px] border border-[rgba(16,185,129,0.2)]">
-              Gemini 3.7
+            <span
+              className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-[3px] border ${
+                engineMode === "gemini"
+                  ? "text-[var(--green)] bg-[rgba(16,185,129,0.1)] border-[rgba(16,185,129,0.2)]"
+                  : "text-amber-300 bg-amber-500/10 border-amber-500/30"
+              }`}
+              title={
+                engineMode === "gemini"
+                  ? "Recommendations synthesized by Gemini over data-joined district indicators"
+                  : "Deterministic rule-based recommendation builder over Census 2011 & NITI Aayog indicators"
+              }
+            >
+              {engineMode === "gemini" ? "gemini" : "rule-based"}
+            </span>
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-help border border-[var(--border-dim)] rounded px-1.5 py-0.5 bg-[var(--bg-elevated)]"
+              title={PRIORITY_FORMULA_TOOLTIP}
+              aria-label={PRIORITY_FORMULA_TOOLTIP}
+            >
+              <Info className="w-3 h-3 text-[var(--brand-secondary)]" />
+              <span>Formula</span>
             </span>
           </div>
-          <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5 mt-1">
-            <span>Automated ranking updated {lastUpdated}</span>
+          <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-2 mt-1">
+            <span>Census 2011 + NITI Aayog joined • {lastUpdated}</span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setShowRankComparison((prev) => !prev)}
+              className="text-[11px] font-medium text-[var(--brand-secondary)] hover:underline inline-flex items-center gap-1 cursor-pointer"
+            >
+              <ArrowUpDown className="w-3 h-3" />
+              <span>{showRankComparison ? "Show Dossier List" : "Raw vs Need Rank"}</span>
+            </button>
           </div>
         </div>
 
@@ -336,7 +272,7 @@ export default function PriorityPanel({
           onClick={() => fetchPriorities(true)}
           disabled={isLoading}
           className="p-1.5 rounded-[var(--radius-sm)] border border-[var(--border-base)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer disabled:opacity-50"
-          title="Re-run Gemini AI Prioritization"
+          title="Re-run Data-Joined Prioritization"
         >
           <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-[var(--brand-secondary)]" : ""}`} />
         </button>
@@ -416,11 +352,69 @@ export default function PriorityPanel({
           <div className="h-full flex items-center justify-center p-6 text-center text-[12px] text-[var(--text-secondary)]">
             No actionable priority clusters in this sector.
           </div>
+        ) : showRankComparison ? (
+          <div className="p-3 space-y-2 text-[11px]" id="raw-vs-need-rank-panel">
+            <div className="text-[11px] text-[var(--text-secondary)] bg-[var(--bg-subtle)] p-2 rounded border border-[var(--border-dim)]">
+              <strong>Raw complaint count rank vs Need-weighted rank:</strong> normalizing by Census 2011 population (complaints/100k), literacy deprivation, and NITI Aayog Aspirational status prevents high-population metros from crowding out underserved districts.
+            </div>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[var(--border-dim)] text-[10px] uppercase text-[var(--text-tertiary)]">
+                  <th className="py-1.5 pr-2">District (Sector)</th>
+                  <th className="py-1.5 px-2 text-center">Raw Rank</th>
+                  <th className="py-1.5 px-2 text-center">Need Rank</th>
+                  <th className="py-1.5 pl-2 text-right">Shift</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-dim)]">
+                {filteredRecommendations.map((item) => {
+                  const rawRank = item.raw_rank ?? item.rank;
+                  const delta = item.rank_delta ?? rawRank - item.rank;
+                  return (
+                    <tr key={`${item.district}-${item.category}`} className="hover:bg-[var(--bg-elevated)]/40">
+                      <td className="py-2 pr-2">
+                        <div className="font-semibold text-[var(--text-primary)]">
+                          {item.district}{" "}
+                          <span className="text-[10px] uppercase text-[var(--text-tertiary)]">
+                            ({item.category})
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-[var(--text-tertiary)] font-mono">
+                          {item.count} complaints •{" "}
+                          {item.population_2011
+                            ? `Pop ${(item.population_2011 / 100000).toFixed(1)}L`
+                            : "insufficient data"}
+                          {item.aspirational_district ? " • Aspirational" : ""}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-center font-mono text-[var(--text-secondary)]">
+                        #{rawRank}
+                      </td>
+                      <td className="py-2 px-2 text-center font-mono font-bold text-[var(--brand-secondary)]">
+                        #{item.rank}
+                      </td>
+                      <td className="py-2 pl-2 text-right font-mono font-semibold">
+                        {delta > 0 ? (
+                          <span className="text-[var(--green)]">▲ +{delta}</span>
+                        ) : delta < 0 ? (
+                          <span className="text-amber-400">▼ {delta}</span>
+                        ) : (
+                          <span className="text-[var(--text-tertiary)]">— 0</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          filteredRecommendations.map((item, index) => {
+          filteredRecommendations.map((item) => {
             const isExpanded = expandedRank === item.rank;
             const isTopRank = item.rank === 1;
             const isCopied = copiedRank === item.rank;
+            const rawRank = item.raw_rank ?? item.rank;
+            const delta = item.rank_delta ?? rawRank - item.rank;
 
             return (
               <div
@@ -461,18 +455,32 @@ export default function PriorityPanel({
                         <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
                           {item.district}
                         </span>
+                        {item.aspirational_district && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Aspirational
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="truncate max-w-[100px]">{item.state}</span>
                         <span>•</span>
                         <span className="font-mono text-[var(--text-secondary)]">
                           {item.count} reports
                         </span>
+                        <span>•</span>
+                        <span className="font-mono text-[10px]" title="Raw complaint count rank vs Need-weighted rank">
+                          Raw #{rawRank} → Need #{item.rank}{" "}
+                          {delta > 0 ? (
+                            <span className="text-[var(--green)]">(▲+{delta})</span>
+                          ) : delta < 0 ? (
+                            <span className="text-amber-400">(▼{delta})</span>
+                          ) : null}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* RIGHT: Urgency score & expand toggle */}
+                  {/* RIGHT: Need score & expand toggle */}
                   <div className="flex items-center gap-3 shrink-0 ml-2">
                     <div className="text-right">
                       <div
@@ -486,6 +494,11 @@ export default function PriorityPanel({
                       >
                         {item.avg_urgency.toFixed(1)} <span className="text-[10px] text-[var(--text-tertiary)] font-normal">/ 5</span>
                       </div>
+                      {item.need_weighted_score !== undefined && (
+                        <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                          Score {item.need_weighted_score.toFixed(2)}
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-[var(--text-tertiary)]">
@@ -501,33 +514,63 @@ export default function PriorityPanel({
                 {/* EXPANDED DETAIL DRAWER */}
                 {isExpanded && (
                   <div className="p-3 px-4 pt-1 bg-[var(--bg-subtle)] border-t border-[var(--border-dim)] space-y-2.5 text-[12px] animate-in fade-in duration-150">
-                    {/* Rationale */}
+                    {item.project_title && (
+                      <div className="text-[12px] font-semibold text-[var(--text-primary)]">
+                        {item.project_title}
+                      </div>
+                    )}
+
+                    {/* Evidence & Rationale */}
                     <div>
-                      <div className="text-[10px] uppercase font-bold tracking-[0.06em] text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-[var(--brand-secondary)]" />
-                        <span>AI Triage Synthesis</span>
+                      <div className="text-[10px] uppercase font-bold tracking-[0.06em] text-[var(--text-tertiary)] mb-1 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-[var(--brand-secondary)]" />
+                          <span>Data-Joined Evidence ({item.engine || engineMode})</span>
+                        </span>
+                        <span className="font-mono text-[10px] text-[var(--brand-secondary)]">
+                          Confidence: {item.confidence || "insufficient_data"}
+                        </span>
                       </div>
                       <p className="text-[var(--text-secondary)] leading-relaxed text-[12px] bg-[var(--bg-surface)] p-2.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)]">
-                        {item.ai_rationale}
+                        {item.evidence || item.ai_rationale}
                       </p>
                     </div>
 
-                    {/* Population affected */}
-                    <div className="flex items-center justify-between text-[11px] py-1 border-y border-[var(--border-dim)]">
-                      <span className="text-[var(--text-tertiary)] flex items-center gap-1">
-                        <Users className="w-3 h-3 text-[var(--brand-secondary)]" />
-                        Population Impact
-                      </span>
-                      <span className="font-mono font-semibold text-[var(--text-primary)]">
-                        ~{item.estimated_population_affected.toLocaleString()} citizens
-                      </span>
+                    {/* Census 2011 Beneficiaries & Scheme */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] py-1 border-y border-[var(--border-dim)]">
+                      <div>
+                        <span className="text-[var(--text-tertiary)] flex items-center gap-1">
+                          <Users className="w-3 h-3 text-[var(--brand-secondary)]" />
+                          Census 2011 Population
+                        </span>
+                        <span className="font-mono font-semibold text-[var(--text-primary)]">
+                          {item.population_2011 !== null && item.population_2011 !== undefined
+                            ? item.population_2011.toLocaleString()
+                            : "insufficient data"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--text-tertiary)] block">
+                          Relevant Scheme
+                        </span>
+                        <span className="font-medium text-[var(--text-primary)]">
+                          {item.relevant_scheme || "None (Municipal Budget)"}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Recommended action */}
                     <div>
-                      <div className="text-[10px] uppercase font-bold tracking-[0.06em] text-[var(--green)] mb-1 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-[var(--green)]" />
-                        <span>Prescribed Action</span>
+                      <div className="text-[10px] uppercase font-bold tracking-[0.06em] text-[var(--green)] mb-1 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-[var(--green)]" />
+                          <span>Prescribed Action</span>
+                        </span>
+                        {item.owning_department && (
+                          <span className="text-[10px] text-[var(--text-secondary)] normal-case">
+                            {item.owning_department}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[var(--text-primary)] font-medium bg-[rgba(34,197,94,0.06)] p-2.5 rounded-[var(--radius-sm)] border border-[rgba(34,197,94,0.2)]">
                         {item.recommended_action}
@@ -536,9 +579,14 @@ export default function PriorityPanel({
 
                     {/* Action Bar */}
                     <div className="pt-1 flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-[var(--text-tertiary)] italic truncate">
-                        {item.brics_parallel || "BRICS Urban Alignment"}
-                      </span>
+                      <a
+                        href="/data/SOURCES.md"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-[var(--brand-secondary)] hover:underline truncate"
+                      >
+                        Data sources (SOURCES.md)
+                      </a>
 
                       <button
                         type="button"

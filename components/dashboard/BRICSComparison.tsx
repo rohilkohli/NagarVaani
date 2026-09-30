@@ -112,13 +112,13 @@ export default function BRICSComparison({
         {/* Left side */}
         <div className="space-y-1">
           <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--brand-secondary)]">
-            BRICS NATIONS • CROSS-BORDER ANALYSIS
+            Beyond India (BRICS Extension) • Cross-Border Scalability
           </div>
           <h2 className="text-[22px] font-bold tracking-tight text-[var(--text-primary)]">
-            Shared Infrastructure Challenges
+            Beyond India (BRICS Extension)
           </h2>
           <p className="text-[13px] text-[var(--text-secondary)]">
-            Showing real-time data from India + simulated BRICS data
+            India-first civic intelligence extending comparative infrastructure benchmarking to BRICS partner nations
           </p>
         </div>
 
@@ -141,9 +141,19 @@ export default function BRICSComparison({
             ))}
           </div>
           <span className="text-[12px] text-[var(--text-secondary)] font-medium">
-            3.6 billion people represented
+            3.6 billion citizens represented
           </span>
         </div>
+      </div>
+
+      {/* DEMO DATA BANNER */}
+      <div className="flex items-center gap-2 p-3 rounded-[var(--radius-md)] bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-[12px] font-medium">
+        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-bold uppercase tracking-wider">
+          Demo data
+        </span>
+        <span>
+          Beyond India (BRICS extension) records are marked <code>synthetic: true</code> to demonstrate cross-border scalability to international partners without mutating live Indian citizen records.
+        </span>
       </div>
 
       {/* 2. COMPARISON TABLE */}

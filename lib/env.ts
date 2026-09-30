@@ -1,6 +1,10 @@
 export type RequiredEnvOptions = {
   allowMissingClient?: boolean;
   environment?: 'development' | 'production' | 'test';
+  /** When true the caller is running in APP_MODE=demo and production-only
+   *  requirements (APP_URL, ADMIN_SESSION_SECRET, Firebase Admin credentials)
+   *  are not enforced even if NODE_ENV=production. */
+  isDemoMode?: boolean;
 };
 
 const PLACEHOLDER_PATTERNS = [
@@ -42,16 +46,37 @@ export function sanitizeRequiredValue(value: string | undefined, name: string): 
   return sanitized;
 }
 
+/** Returns true when APP_MODE=demo is set in env (server-side). */
+export function isDemoEnv(env: Record<string, string | undefined> = process.env): boolean {
+  return String(env.APP_MODE || env.VITE_APP_MODE || '').trim().toLowerCase() === 'demo';
+}
+
 export function validateRequiredEnv(
   env: Record<string, string | undefined>,
   options: RequiredEnvOptions = {}
 ) {
   const { allowMissingClient = false, environment = process.env.NODE_ENV || 'development' } = options;
 
-  const requiredServer = environment === 'production' ? ['GEMINI_API_KEY', 'APP_URL'] : ['GEMINI_API_KEY'];
-  if (environment === 'production') {
-    requiredServer.push('ADMIN_SESSION_SECRET');
+  // Demo mode relaxes all production-only constraints — judges open the live URL
+  // with zero credentials other than optionally GEMINI_API_KEY.
+  const demoMode = options.isDemoMode ?? isDemoEnv(env);
+
+  // In demo mode GEMINI_API_KEY is optional (rule-based classifier is the fallback)
+  const requiredServer: string[] = [];
+  if (!demoMode) {
+    // production requires GEMINI_API_KEY; development already warns-not-throws
+    if (environment === 'production') {
+      requiredServer.push('GEMINI_API_KEY');
+    } else {
+      requiredServer.push('GEMINI_API_KEY');
+    }
   }
+
+  // APP_URL and ADMIN_SESSION_SECRET are only required in live production
+  if (environment === 'production' && !demoMode) {
+    requiredServer.push('APP_URL', 'ADMIN_SESSION_SECRET');
+  }
+
   const requiredClient = [
     'VITE_FIREBASE_API_KEY',
     'VITE_FIREBASE_AUTH_DOMAIN',
@@ -63,16 +88,18 @@ export function validateRequiredEnv(
   ];
 
   const isProduction = environment === 'production';
-  const varsToCheck = [...requiredServer, ...(isProduction || !allowMissingClient ? requiredClient : [])];
+  // In demo mode Firebase client config is optional (sandbox uses in-memory store)
+  const checkClient = !demoMode && (isProduction || !allowMissingClient);
+  const varsToCheck = [...requiredServer, ...(checkClient ? requiredClient : [])];
 
   const values: Record<string, string> = {};
 
   for (const key of varsToCheck) {
     if (!env[key]) {
-      if (environment === 'production' || !allowMissingClient) {
+      if ((environment === 'production' || !allowMissingClient) && !demoMode) {
         values[key] = sanitizeRequiredValue(env[key], key);
       } else {
-        console.warn(`Environment variable ${key} is not set. Running in development mode with degraded functionality.`);
+        console.warn(`Environment variable ${key} is not set. Running in ${demoMode ? 'demo' : 'development'} mode with degraded functionality.`);
         values[key] = '';
       }
       continue;
@@ -81,8 +108,11 @@ export function validateRequiredEnv(
     values[key] = sanitizeRequiredValue(env[key], key);
   }
 
-  if (environment === 'production' && !env.FIREBASE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) {
-    throw new Error('Missing required Firebase Admin credentials: FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS');
+  // Firebase Admin credentials: required only in live production (not demo)
+  if (environment === 'production' && !demoMode) {
+    if (!env.FIREBASE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) {
+      throw new Error('Missing required Firebase Admin credentials: FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS');
+    }
   }
 
   return values;
@@ -91,6 +121,7 @@ export function validateRequiredEnv(
 export function getSafeEnvironment(env: Record<string, string | undefined> = process.env) {
   return {
     NODE_ENV: env.NODE_ENV || 'development',
+    APP_MODE: env.APP_MODE || 'live',
     GEMINI_API_KEY: env.GEMINI_API_KEY ? 'configured' : 'missing',
     APP_URL: env.APP_URL || 'missing',
     VITE_FIREBASE_API_KEY: env.VITE_FIREBASE_API_KEY ? 'configured' : 'missing',

@@ -175,6 +175,7 @@ export default function CitizenPage({
   // SECTION 2: Voice & Text States
   const [detectedLanguage, setDetectedLanguage] = useState<string>("English");
   const [text, setText] = useState<string>("");
+  const [originalVoiceText, setOriginalVoiceText] = useState<string>("");
   const [textError, setTextError] = useState<string>("");
 
   // Quick Report Specific States
@@ -221,12 +222,15 @@ export default function CitizenPage({
   }, [submissionSuccessId, text, quickText, district, quickLandmark]);
 
   // Voice Transcribe Callback
-  const handleVoiceTranscribe = (transcribedEnglish: string, lang: string) => {
+  const handleVoiceTranscribe = (transcribedEnglish: string, lang: string, origText?: string) => {
     setText((prev) => {
       const combined = prev ? `${prev.trim()} ${transcribedEnglish}` : transcribedEnglish;
       return combined.slice(0, 500);
     });
     setDetectedLanguage(lang || "English");
+    if (origText) {
+      setOriginalVoiceText(origText);
+    }
     setTextError("");
   };
 
@@ -339,9 +343,9 @@ export default function CitizenPage({
     setIsSubmitting(true);
 
     try {
-      // 1. Upload photo if present
+      // 1. Upload photo if present (live mode only — demo mode never writes to Storage)
       let uploadedPhotoUrl = "";
-      if (photoFile) {
+      if (photoFile && !isDemoMode()) {
         try {
           const fileExt = photoFile.name.split(".").pop() || "jpg";
           const fileName = `complaints/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -367,6 +371,9 @@ export default function CitizenPage({
       const newRecord: Submission = {
         id: trackingCode,
         text: validated.normalized.text,
+        original_text: originalVoiceText || validated.normalized.text,
+        detected_language: detectedLanguage || validated.normalized.language,
+        english_translation: validated.normalized.summary || summaryEnglish,
         language: validated.normalized.language,
         category: validated.normalized.category as ComplaintCategory,
         urgency: validated.normalized.urgency as 1 | 2 | 3 | 4 | 5,
@@ -423,7 +430,27 @@ export default function CitizenPage({
       }
 
       // 4. Persist through the backend so validation, rate limits, and audit rules stay centralized.
-      if (!isDemoMode()) {
+      if (isDemoMode()) {
+        const demoRes = await fetch("/api/demo/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newRecord),
+        });
+        const demoData = await demoRes.json();
+        if (!demoRes.ok || !demoData.success) {
+          throw new Error(demoData.error || "Demo submission could not be processed.");
+        }
+        if (demoData.submission) {
+          newRecord.id = demoData.trackingId || demoData.submission.id || newRecord.id;
+          newRecord.category = demoData.submission.category || newRecord.category;
+          newRecord.urgency = demoData.submission.urgency || newRecord.urgency;
+          newRecord.summary_english = demoData.submission.summary_english || newRecord.summary_english;
+          newRecord.language = demoData.submission.language || newRecord.language;
+          newRecord.classified_by = demoData.submission.classified_by;
+          newRecord.confidence = demoData.submission.confidence;
+          newRecord.status = "classified";
+        }
+      } else {
         const persistRes = await fetch("/api/submissions", {
           method: "POST",
           headers: {
@@ -549,6 +576,25 @@ export default function CitizenPage({
     // 2. Perform background processing (Storage upload, Gemini classify, and Firestore write)
     (async () => {
       try {
+        if (isDemoMode()) {
+          const demoRes = await fetch("/api/demo/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newRecord),
+          });
+          if (demoRes.ok) {
+            const demoData = await demoRes.json();
+            if (demoData.submission) {
+              newRecord.category = demoData.submission.category || newRecord.category;
+              newRecord.urgency = demoData.submission.urgency || newRecord.urgency;
+              newRecord.summary_english = demoData.submission.summary_english || newRecord.summary_english;
+              newRecord.classified_by = demoData.submission.classified_by;
+              newRecord.confidence = demoData.submission.confidence;
+            }
+          }
+          return;
+        }
+
         let finalPhotoUrl = "";
         if (photoFile) {
           try {
@@ -589,21 +635,19 @@ export default function CitizenPage({
           console.warn("Background classify notice:", classifyErr);
         }
 
-        if (!isDemoMode()) {
-          const persistRes = await fetch("/api/submissions", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": trackingCode,
-            },
-            body: JSON.stringify({ ...newRecord, photo_url: finalPhotoUrl || undefined }),
-          });
-          const persistData = await persistRes.json();
-          if (!persistRes.ok || !persistData.success) {
-            throw new Error(persistData.error || "Submission could not be saved.");
-          }
-          newRecord.firestoreId = persistData.firestoreId;
+        const persistRes = await fetch("/api/submissions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": trackingCode,
+          },
+          body: JSON.stringify({ ...newRecord, photo_url: finalPhotoUrl || undefined }),
+        });
+        const persistData = await persistRes.json();
+        if (!persistRes.ok || !persistData.success) {
+          throw new Error(persistData.error || "Submission could not be saved.");
         }
+        newRecord.firestoreId = persistData.firestoreId;
       } catch (bgErr) {
         console.warn("Background sync error:", bgErr);
       }

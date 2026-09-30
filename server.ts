@@ -7,7 +7,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { getDepartmentForCategory, getSLADeadline } from "./lib/departments";
-import { validateRequiredEnv } from "./lib/env";
+import { validateRequiredEnv, isDemoEnv } from "./lib/env";
 import { authenticateFirebaseUser, createAdminSessionToken, verifyAdminSessionToken, UserRole } from "./lib/auth";
 import { getAdminFirestore } from "./lib/firebaseAdmin";
 import type { Firestore, Query } from "firebase-admin/firestore";
@@ -19,9 +19,18 @@ import { scoreDuplicate } from "./lib/duplicate";
 import { getRetentionCutoff, isOlderThanRetention } from "./lib/retention";
 import { canSkipWebhookSignature, claimWhatsAppMessage, detectedLanguageReply, downloadWhatsAppMedia, graphApiVersion, isLiveEnvironment, runClassificationJob, verifyMetaSignature } from "./lib/whatsapp";
 import { transcribeAudio } from "./lib/transcribe";
+import multer from "multer";
+import axios from "axios";
 import { validateClassifyPayload, validateComplaintPayload, validatePrioritizePayload } from "./lib/validation";
 import { getGeminiModelName, initializeGeminiModel } from "./lib/gemini";
+import { readFileSync } from "fs";
 import { parseGeminiClassification, ruleBasedClassify } from "./lib/classify";
+import { demoAddSubmission, demoGetSubmissions } from "./lib/demoSandbox";
+import {
+  joinAndScoreClusters,
+  buildDeterministicRecommendations,
+  validateGeminiRecommendations,
+} from "./lib/priority";
 
 async function findLikelyDuplicate(
   firestore: Firestore,
@@ -99,10 +108,12 @@ async function downloadVisionImage(urlValue: string): Promise<{ buffer: Buffer; 
 dotenv.config();
 
 const environment = (process.env.NODE_ENV || "development") as "development" | "production" | "test";
+const IS_DEMO = isDemoEnv(process.env);
 
 const envConfig = validateRequiredEnv(process.env, {
   environment,
   allowMissingClient: true,
+  isDemoMode: IS_DEMO,
 });
 
 function getServerFirebaseConfig() {
@@ -129,17 +140,22 @@ function getServerFirebaseConfig() {
   return config;
 }
 
-if (environment === "production" && !envConfig.GEMINI_API_KEY) {
+if (environment === "production" && !IS_DEMO && !envConfig.GEMINI_API_KEY) {
   throw new Error("Missing required production env: GEMINI_API_KEY");
 }
 
-if (isLiveEnvironment(environment, process.env.APP_MODE || process.env.VITE_APP_MODE) && !process.env.META_APP_SECRET) {
+if (!IS_DEMO && isLiveEnvironment(environment, process.env.APP_MODE || process.env.VITE_APP_MODE) && !process.env.META_APP_SECRET) {
   logStructured("error", "whatsapp_signature_secret_missing", { message: "META_APP_SECRET is required for live WhatsApp webhooks." });
+}
+
+if (IS_DEMO) {
+  logStructured("info", "demo_mode_active", { message: "APP_MODE=demo: in-memory sandbox active. Firestore, Auth and Storage are disabled. Admin endpoints are blocked." });
 }
 
 async function startServer() {
   await initializeGeminiModel();
   const app = express();
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
   const PORT = Number(process.env.PORT || 3000);
   const idempotentSubmissions = new Map<string, { createdAt: number; response: Record<string, unknown> }>();
 
@@ -194,13 +210,13 @@ async function startServer() {
     })
   );
 
-  // CORS — only allow our own origin in production
+  // CORS — allow * in demo mode so judges can test from any origin
   app.use(
     cors({
       origin:
-        process.env.NODE_ENV === "production"
-          ? [process.env.APP_URL || "", "https://nagarvaani.com"]
-          : "*",
+        IS_DEMO || process.env.NODE_ENV !== "production"
+          ? "*"
+          : [process.env.APP_URL || "", "https://nagarvaani.com"],
       methods: ["GET", "POST", "PATCH"],
       allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "X-Internal-Job-Key", "X-Hub-Signature-256"],
     })
@@ -288,17 +304,399 @@ async function startServer() {
   app.get("/api/ready", (req, res) => {
     const hasGemini = Boolean(process.env.GEMINI_API_KEY);
     const hasAdminCredentials = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS);
-    const ready = environment !== "production" || (hasGemini && hasAdminCredentials);
+    // In demo mode Firebase Admin is not needed — sandbox is in-memory
+    const ready = IS_DEMO || environment !== "production" || (hasGemini && hasAdminCredentials);
 
     return res.status(ready ? 200 : 503).json({
       status: ready ? "ready" : "not_ready",
+      mode: IS_DEMO ? "demo" : "live",
       checks: {
-        gemini: hasGemini ? "configured" : "missing",
-        firebaseAdmin: hasAdminCredentials ? "configured" : "missing",
+        gemini: hasGemini ? "configured" : (IS_DEMO ? "optional-in-demo" : "missing"),
+        firebaseAdmin: IS_DEMO ? "not-required-in-demo" : (hasAdminCredentials ? "configured" : "missing"),
       },
       timestamp: new Date().toISOString(),
     });
   });
+
+  // ─── DEMO SANDBOX ROUTES ─────────────────────────────────────────────────
+  // Strict per-IP rate limits protect Gemini quota even in demo mode.
+  const demoSubmitLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5,                    // 5 classifications per IP per 15 min
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: "Demo classification limit reached. Please wait 15 minutes before submitting again." },
+  });
+
+  const demoReadLimiter = rateLimit({
+    windowMs: 60 * 1000,      // 1 minute
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  /** GET /api/demo/submissions — returns the in-memory sandbox submissions */
+  app.get("/api/demo/submissions", demoReadLimiter, (_req, res) => {
+    if (!IS_DEMO) return res.status(404).json({ success: false, error: "Not found." });
+    return res.json({ success: true, submissions: demoGetSubmissions(), mode: "demo" });
+  });
+
+  /** POST /api/demo/submit — classify + insert into sandbox, never touches Firestore */
+  app.post("/api/demo/submit", demoSubmitLimiter, async (req, res) => {
+    if (!IS_DEMO) return res.status(404).json({ success: false, error: "Not found." });
+
+    const payload = req.body || {};
+    const validatedPayload = validateComplaintPayload(payload);
+    if (!validatedPayload.isValid) {
+      return res.status(400).json({ success: false, error: "Invalid complaint payload.", details: validatedPayload.errors });
+    }
+
+    const text = String(payload.text || "").trim();
+    const category = String(payload.category || "other");
+    const district = String(payload.district || "Unknown").trim();
+    const state = String(payload.state || "").trim();
+    const country = String(payload.country || "India").trim();
+    const language = String(payload.language || "English").trim();
+    const urgency = Number(payload.urgency || 3);
+    const lat = Number(payload.lat);
+    const lng = Number(payload.lng);
+
+    if (!text || text.length > 1000 || !["roads", "water", "electricity", "sanitation", "health", "education", "other"].includes(category) ||
+      !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ success: false, error: "Invalid demo complaint payload." });
+    }
+
+    const complaintText = redactPii(text);
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    let classifiedBy: "gemini" | "rule-based" = "rule-based";
+    let classResult: { category: string; urgency: number; summary_english: string; language_detected: string; keywords: string[]; confidence: string; classified_by: "gemini" | "rule-based" };
+
+    if (apiKey && Date.now() >= geminiQuotaCooldownUntil) {
+      try {
+        const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+        const userPrompt = `Classify this citizen complaint and return ONLY valid JSON:
+
+Complaint text: ${complaintText}
+Country: ${country}
+District: ${district}
+
+Return JSON strictly in this format:
+{"category":"roads|water|electricity|sanitation|health|education|other","urgency":1-5,"summary_english":"under 20 words","english_translation":"full English translation","language_detected":"language name","keywords":["array","of","3-5","words"],"confidence":"high|medium|low"}`;
+        const response = await ai.models.generateContent({
+          model: getGeminiModelName(),
+          contents: userPrompt,
+          config: { responseMimeType: "application/json", maxOutputTokens: 300 },
+        });
+        const parsed = parseGeminiClassification(response.text || "", complaintText);
+        classResult = { ...parsed, classified_by: "gemini" };
+        classifiedBy = "gemini";
+      } catch (geminiErr: any) {
+        if (geminiErr?.status === "RESOURCE_EXHAUSTED" || geminiErr?.message?.includes("429")) {
+          geminiQuotaCooldownUntil = Date.now() + 60000;
+        }
+        const rb = ruleBasedClassify(complaintText);
+        classResult = { ...rb };
+        classifiedBy = "rule-based";
+      }
+    } else {
+      const rb = ruleBasedClassify(complaintText);
+      classResult = { ...rb };
+    }
+
+    const submission = demoAddSubmission({
+      text: complaintText,
+      original_text: complaintText,
+      detected_language: classResult.language_detected || language,
+      english_translation: classResult.english_translation || classResult.summary_english || complaintText.slice(0, 100),
+      language: classResult.language_detected || language,
+      category: classResult.category || category,
+      urgency: classResult.urgency || urgency,
+      summary_english: classResult.summary_english || complaintText.slice(0, 100),
+      district,
+      state,
+      country,
+      lat,
+      lng,
+      classified_by: classifiedBy,
+      confidence: classResult.confidence,
+      keywords: classResult.keywords,
+    });
+
+    incrementMetric("requests");
+    return res.status(201).json({
+      success: true,
+      trackingId: submission.id,
+      submission,
+      classification: classResult,
+      engine: classifiedBy,
+      sandbox: true,
+    });
+  });
+
+  /** POST /api/transcribe — Web voice input transcription using Gemini */
+  app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No audio file provided." });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        // Fallback demo response if no Gemini key is provided
+        return res.json({
+          original_text: "सड़क पर गहरा गड्ढा है जिससे रात में दुर्घटनाएं हो रही हैं।",
+          english_translation: "There is a deep pothole on the road causing accidents at night.",
+          language_detected: "Hindi",
+          confidence: 0.90,
+          fallback: true,
+        });
+      }
+
+      const result = await transcribeAudio(file.buffer, file.mimetype || "audio/webm");
+      return res.json(result);
+    } catch (err: any) {
+      console.error("Transcription error:", err);
+      return res.json({
+        original_text: "सड़क पर गहरा गड्ढा है जिससे दुर्घटनाएं हो रही हैं।",
+        english_translation: "Deep pothole on the road causing frequent accidents.",
+        language_detected: "Hindi",
+        confidence: 0.80,
+        fallback: true,
+      });
+    }
+  });
+
+  /** GET /api/tts/config — check if Cloud Text-to-Speech is enabled */
+  app.get("/api/tts/config", (_req, res) => {
+    const enabled = process.env.ENABLE_TTS === "true";
+    return res.json({ enabled });
+  });
+
+  /** POST /api/tts — optional Cloud Text-to-Speech playback of tracking status (behind ENABLE_TTS=true) */
+  app.post("/api/tts", async (req, res) => {
+    if (process.env.ENABLE_TTS !== "true") {
+      return res.status(403).json({
+        success: false,
+        error: "Text-to-Speech is disabled by configuration (ENABLE_TTS is off by default).",
+      });
+    }
+
+    const { text, languageCode = "en-IN" } = req.body || {};
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ success: false, error: "Text is required for TTS." });
+    }
+
+    const apiKey = process.env.GOOGLE_TTS_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ success: false, error: "Cloud TTS API key is not configured." });
+    }
+
+    try {
+      const ttsResponse = await axios.post(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+        {
+          input: { text: text.slice(0, 500) },
+          voice: { languageCode, ssmlGender: "NEUTRAL" },
+          audioConfig: { audioEncoding: "MP3" },
+        },
+        { headers: { "Content-Type": "application/json" } }
+      );
+
+      const audioBase64 = ttsResponse.data?.audioContent;
+      if (!audioBase64) {
+        return res.status(502).json({ success: false, error: "Failed to synthesize speech." });
+      }
+
+      return res.json({
+        success: true,
+        audioBase64,
+        mimeType: "audio/mp3",
+      });
+    } catch (ttsErr: any) {
+      console.error("Cloud TTS error:", ttsErr?.response?.data || ttsErr.message);
+      return res.status(500).json({
+        success: false,
+        error: ttsErr?.response?.data?.error?.message || "Failed to synthesize speech via Cloud TTS.",
+      });
+    }
+  });
+
+  /** GET /data/SOURCES.md — serves the data provenance & sources documentation */
+  app.get("/data/SOURCES.md", (_req, res) => {
+    try {
+      const md = readFileSync(path.join(process.cwd(), "data", "SOURCES.md"), "utf8");
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      return res.send(md);
+    } catch {
+      return res.status(404).send("# Data Sources\nSee data/SOURCES.md in the repository.");
+    }
+  });
+
+  async function executeDataJoinedPrioritization(submissionsList: any[]) {
+    const joinedClusters = joinAndScoreClusters(submissionsList);
+    const topJoinedTable = joinedClusters.slice(0, 10).map((c) => ({
+      district: c.district,
+      state: c.state,
+      country: c.country,
+      category: c.category,
+      complaint_count: c.count,
+      mean_urgency: c.avg_urgency,
+      mean_unresolved_age_days: c.mean_unresolved_age_days,
+      population_2011: c.population_2011,
+      literacy_rate_2011: c.literacy_rate_2011,
+      aspirational_district: c.aspirational_district,
+      tap_water_coverage_pct: c.tap_water_coverage_pct,
+      pmgsy_road_connectivity_pct: c.pmgsy_road_connectivity_pct,
+      sanitation_coverage_pct: c.sanitation_coverage_pct,
+      complaints_per_100k: c.complaints_per_100k,
+      deprivation_factor: c.deprivation_factor,
+      unresolved_age_factor: c.unresolved_age_factor,
+      need_weighted_score: c.need_weighted_score,
+      raw_rank: c.raw_rank,
+      need_rank: c.need_rank,
+      rank_delta: c.rank_delta,
+      relevant_scheme: c.relevant_scheme,
+      owning_department: c.owning_department,
+      estimated_beneficiaries: c.estimated_beneficiaries,
+      confidence: c.confidence,
+      evidence_summary: c.evidence,
+    }));
+
+    const dataSignature = `${submissionsList.length}_${topJoinedTable
+      .map((d) => `${d.district}:${d.category}:${d.complaint_count}:${d.need_weighted_score}`)
+      .slice(0, 5)
+      .join("|")}`;
+    const now = Date.now();
+    if (lastPriorityCache && lastPriorityCache.signature === dataSignature && now - lastPriorityCache.timestamp < 300000) {
+      return {
+        success: true,
+        cached: true,
+        engine: lastPriorityCache.recommendations[0]?.engine || "rule-based",
+        recommendations: lastPriorityCache.recommendations,
+        joinedTable: topJoinedTable,
+      };
+    }
+
+    const fallbackRecs = () => {
+      const recommendations = buildDeterministicRecommendations(joinedClusters, 10);
+      lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations };
+      return recommendations;
+    };
+
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    if (!apiKey || now < geminiQuotaCooldownUntil || topJoinedTable.length === 0) {
+      return {
+        success: true,
+        engine: "rule-based" as const,
+        recommendations: fallbackRecs(),
+        joinedTable: topJoinedTable,
+      };
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+      const prompt =
+        "You are a national infrastructure policy analyst for India. Below is an aggregated, data-joined district table " +
+        "(combining citizen complaint clusters with Census 2011 population/literacy and NITI Aayog Aspirational District flags; raw complaints are omitted).\n" +
+        "Return a JSON array of up to 10 recommendations ordered by need_rank.\n" +
+        "Rules:\n" +
+        "1. Do NOT invent or guess any numbers. If population_2011 or an indicator is null, state 'insufficient data' in evidence.\n" +
+        "2. Only include relevant_scheme when appropriate (e.g., Jal Jeevan Mission, PMGSY, Swachh Bharat Mission, RDSS, PM-ABHIM, Samagra Shiksha); otherwise null.\n" +
+        "3. Cite the exact numbers from the table in `evidence`.\n\n" +
+        `Joined Table:\n${JSON.stringify(topJoinedTable)}`;
+
+      const response = await ai.models.generateContent({
+        model: getGeminiModelName(),
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                project_title: { type: Type.STRING },
+                district: { type: Type.STRING },
+                state: { type: Type.STRING },
+                category: { type: Type.STRING },
+                relevant_scheme: { type: Type.STRING, nullable: true },
+                estimated_beneficiaries: { type: Type.NUMBER, nullable: true },
+                evidence: { type: Type.STRING },
+                confidence: { type: Type.STRING },
+                owning_department: { type: Type.STRING },
+                ai_rationale: { type: Type.STRING },
+                recommended_action: { type: Type.STRING },
+              },
+              required: ["project_title", "district", "category", "evidence", "confidence", "owning_department"],
+            },
+          },
+        },
+      });
+
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(response.text || "[]");
+      } catch {
+        parsed = null;
+      }
+
+      const validated = validateGeminiRecommendations(parsed, joinedClusters, 10);
+      if (!validated) {
+        return {
+          success: true,
+          engine: "rule-based" as const,
+          recommendations: fallbackRecs(),
+          joinedTable: topJoinedTable,
+        };
+      }
+
+      lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations: validated };
+      return {
+        success: true,
+        engine: "gemini" as const,
+        model: getGeminiModelName(),
+        recommendations: validated,
+        joinedTable: topJoinedTable,
+      };
+    } catch (geminiApiError: any) {
+      if (geminiApiError?.status === "RESOURCE_EXHAUSTED" || geminiApiError?.message?.includes("429")) {
+        geminiQuotaCooldownUntil = Date.now() + 60000;
+      }
+      return {
+        success: true,
+        engine: "rule-based" as const,
+        recommendations: fallbackRecs(),
+        joinedTable: topJoinedTable,
+      };
+    }
+  }
+
+  /** POST /api/demo/prioritize — data-joined prioritizer over sandbox submissions */
+  app.post("/api/demo/prioritize", demoReadLimiter, async (req, res) => {
+    if (!IS_DEMO) return res.status(404).json({ success: false, error: "Not found." });
+    const bodySubs = Array.isArray(req.body?.submissions) && req.body.submissions.length > 0
+      ? req.body.submissions
+      : demoGetSubmissions();
+    const result = await executeDataJoinedPrioritization(bodySubs);
+    return res.json({ ...result, sandbox: true });
+  });
+
+  // ─── BLOCK LIVE-WRITE ENDPOINTS IN DEMO MODE ─────────────────────────────
+  if (IS_DEMO) {
+    const blocked = (res: any, label: string) =>
+      res.status(403).json({ success: false, error: `${label} is disabled in demo mode. Use /api/demo/* endpoints.` });
+    app.post("/api/submissions", (_req, res) => blocked(res, "Live submission"));
+    app.post("/api/submit", (_req, res) => blocked(res, "Live submission"));
+    app.post("/api/classify", (_req, res) => blocked(res, "Live classification"));
+    app.post("/api/prioritize", (_req, res) => blocked(res, "Live prioritization"));
+    app.post("/api/auth/session", (_req, res) => blocked(res, "Staff authentication"));
+    app.post("/api/admin/seed", (_req, res) => blocked(res, "Seeding"));
+    app.patch(/^\/api\/admin\/submissions\/.+\/status$/, (_req, res) => blocked(res, "Status update"));
+    app.post(/^\/api\/admin\/submissions\/.+\/reclassify$/, (_req, res) => blocked(res, "Reclassification"));
+    app.post(/^\/api\/ai\/jobs\/.+\/process$/, (_req, res) => blocked(res, "AI job dispatch"));
+    app.post(/^\/api\/whatsapp\/.*/, (_req, res) => res.sendStatus(200)); // silently accept
+  }
 
   app.get("/api/metrics", (req, res) => {
     const authorization = String(req.headers.authorization || "");
@@ -308,6 +706,7 @@ async function startServer() {
       return res.status(403).json({ success: false, error: "Admin role required." });
     }
     return res.json({ success: true, metrics: getMetrics() });
+
   });
 
   app.post("/api/auth/login", (_req, res) => {
@@ -323,6 +722,9 @@ async function startServer() {
     const expectedKey = process.env.INTERNAL_JOB_KEY;
     if (!expectedKey || req.headers["x-internal-job-key"] !== expectedKey) {
       return res.status(401).json({ success: false, error: "Invalid internal job credential." });
+    }
+    if (IS_DEMO) {
+      return res.status(403).json({ success: false, error: "Retention job is disabled in demo mode." });
     }
 
     const retentionDays = Number(req.body?.retentionDays || process.env.RETENTION_DAYS || 365);
@@ -419,8 +821,9 @@ async function startServer() {
       userId: session.payload?.sub,
       expiresIn: Math.max(0, Number(session.payload?.exp ?? 0) - Math.floor(Date.now() / 1000)),
     });
+  });
 
-    app.post("/api/admin/seed", async (req, res) => {
+  app.post("/api/admin/seed", async (req, res) => {
       const authorization = String(req.headers.authorization || "");
       const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
       const session = verifyAdminSessionToken(token);
@@ -491,7 +894,6 @@ async function startServer() {
         return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
       }
     });
-  });
 
   app.post("/api/submissions", async (req, res) => {
     const payload = req.body || {};
@@ -528,6 +930,9 @@ async function startServer() {
     const submission = {
       id: trackingId,
       text,
+      original_text: String(payload.original_text || text),
+      detected_language: String(payload.detected_language || language),
+      english_translation: String(payload.english_translation || payload.summary_english || text),
       language,
       category,
       urgency,
@@ -551,12 +956,12 @@ async function startServer() {
       const document = firestore.collection("submissions").doc();
       const persistedSubmission = duplicate
         ? {
-            ...submission,
-            status: "duplicate",
-            duplicate_of: duplicate.id,
-            duplicate_confidence: duplicate.score,
-            duplicate_distance_km: duplicate.distance_km,
-          }
+          ...submission,
+          status: "duplicate",
+          duplicate_of: duplicate.id,
+          duplicate_confidence: duplicate.score,
+          duplicate_distance_km: duplicate.distance_km,
+        }
         : submission;
       await document.set(persistedSubmission);
 
@@ -844,66 +1249,66 @@ async function startServer() {
     }
   });
 
-// Circuit breaker & caching for AI endpoints to prevent 429 quota exhaustion
-let geminiQuotaCooldownUntil = 0;
-let lastPriorityCache: { signature: string; timestamp: number; recommendations: any[] } | null = null;
+  // Circuit breaker & caching for AI endpoints to prevent 429 quota exhaustion
+  let geminiQuotaCooldownUntil = 0;
+  let lastPriorityCache: { signature: string; timestamp: number; recommendations: any[] } | null = null;
 
-// High-accuracy heuristic rule-based classifier for instant response or quota cooldown
-// Helper function to build fallback recommendations from submissions
-function buildFallbackRecommendations(aggregatedData: any[]) {
-  const sorted = [...aggregatedData]
-    .sort((a, b) => {
-      const scoreA =
-        a.weight_score ??
-        a.count * a.avg_urgency * (1 + ((a.total_upvotes || 0) / (a.count || 1)) * 0.2);
-      const scoreB =
-        b.weight_score ??
-        b.count * b.avg_urgency * (1 + ((b.total_upvotes || 0) / (b.count || 1)) * 0.2);
-      return scoreB - scoreA;
-    })
-    .slice(0, 10);
+  // High-accuracy heuristic rule-based classifier for instant response or quota cooldown
+  // Helper function to build fallback recommendations from submissions
+  function buildFallbackRecommendations(aggregatedData: any[]) {
+    const sorted = [...aggregatedData]
+      .sort((a, b) => {
+        const scoreA =
+          a.weight_score ??
+          a.count * a.avg_urgency * (1 + ((a.total_upvotes || 0) / (a.count || 1)) * 0.2);
+        const scoreB =
+          b.weight_score ??
+          b.count * b.avg_urgency * (1 + ((b.total_upvotes || 0) / (b.count || 1)) * 0.2);
+        return scoreB - scoreA;
+      })
+      .slice(0, 10);
 
-  const ACTION_MAP: Record<string, (d: string) => string> = {
-    roads: (d) => `Issue emergency resurfacing contract for top arterial corridors in ${d} within 14 days.`,
-    water: (d) => `Deploy rapid response water quality audit team to ${d} and inspect supply mains within 7 days.`,
-    electricity: (d) => `DISCOM to conduct transformer load audit in ${d} and install surge protection on critical feeders within 14 days.`,
-    sanitation: (d) => `Municipal corporation to deploy drain-clearance crew and CCTV inspection unit in ${d} within 48 hours.`,
-    health: (d) => `State health department to review ${d} PHC staffing and medicine stocks; submit emergency procurement within 14 days.`,
-    education: (d) => `District Education Officer to inspect flagged school buildings in ${d} and issue structural clearance within 21 days.`,
-    other: (d) => `District Collector to assign nodal officer for ${d} civic complaints and file resolution plan within 14 days.`,
-  };
-
-  const BRICS_MAP: Record<string, string> = {
-    roads: "Parallels rapid pavement resilience protocols active in São Paulo (Brazil) and Ekurhuleni (South Africa).",
-    water: "Matches municipal leak telemetry and distribution response deployed in Cape Town (South Africa) and Fortaleza (Brazil).",
-    electricity: "Smart grid distribution monitoring mirrors load-balancing pilots in Shanghai (China) and Novosibirsk (Russia).",
-    sanitation: "Real-time stormwater tracking aligns with urban resilience initiatives in Durban (South Africa) and Belo Horizonte (Brazil).",
-    health: "Primary healthcare supply forecasting reflects clinic protocols across Minas Gerais (Brazil) and Guangdong (China).",
-    education: "School facility structural audit protocols reflect district safety initiatives in Saint Petersburg (Russia) and Chengdu (China).",
-    other: "Municipal civic incident routing reflects standard BRICS urban resilience protocols.",
-  };
-
-  return sorted.map((item, index) => {
-    const cat = item.category || "roads";
-    const dist = item.district || "Metropolitan Zone";
-    const pop = (item.count || 1) * 15400;
-    const action = (ACTION_MAP[cat] || ACTION_MAP.other)(dist);
-    const brics = BRICS_MAP[cat] || BRICS_MAP.other;
-
-    return {
-      rank: index + 1,
-      category: cat,
-      district: dist,
-      state: item.state || "National Sector",
-      count: item.count || 1,
-      avg_urgency: item.avg_urgency || 3.5,
-      ai_rationale: `Cluster analysis indicates ${item.count} high-density citizen reports with an average urgency of ${item.avg_urgency}/5. Immediate municipal intervention recommended to alleviate public strain for ~${pop.toLocaleString()} residents.`,
-      estimated_population_affected: pop,
-      recommended_action: action,
-      brics_parallel: brics,
+    const ACTION_MAP: Record<string, (d: string) => string> = {
+      roads: (d) => `Issue emergency resurfacing contract for top arterial corridors in ${d} within 14 days.`,
+      water: (d) => `Deploy rapid response water quality audit team to ${d} and inspect supply mains within 7 days.`,
+      electricity: (d) => `DISCOM to conduct transformer load audit in ${d} and install surge protection on critical feeders within 14 days.`,
+      sanitation: (d) => `Municipal corporation to deploy drain-clearance crew and CCTV inspection unit in ${d} within 48 hours.`,
+      health: (d) => `State health department to review ${d} PHC staffing and medicine stocks; submit emergency procurement within 14 days.`,
+      education: (d) => `District Education Officer to inspect flagged school buildings in ${d} and issue structural clearance within 21 days.`,
+      other: (d) => `District Collector to assign nodal officer for ${d} civic complaints and file resolution plan within 14 days.`,
     };
-  });
-}
+
+    const BRICS_MAP: Record<string, string> = {
+      roads: "Parallels rapid pavement resilience protocols active in São Paulo (Brazil) and Ekurhuleni (South Africa).",
+      water: "Matches municipal leak telemetry and distribution response deployed in Cape Town (South Africa) and Fortaleza (Brazil).",
+      electricity: "Smart grid distribution monitoring mirrors load-balancing pilots in Shanghai (China) and Novosibirsk (Russia).",
+      sanitation: "Real-time stormwater tracking aligns with urban resilience initiatives in Durban (South Africa) and Belo Horizonte (Brazil).",
+      health: "Primary healthcare supply forecasting reflects clinic protocols across Minas Gerais (Brazil) and Guangdong (China).",
+      education: "School facility structural audit protocols reflect district safety initiatives in Saint Petersburg (Russia) and Chengdu (China).",
+      other: "Municipal civic incident routing reflects standard BRICS urban resilience protocols.",
+    };
+
+    return sorted.map((item, index) => {
+      const cat = item.category || "roads";
+      const dist = item.district || "Metropolitan Zone";
+      const pop = (item.count || 1) * 15400;
+      const action = (ACTION_MAP[cat] || ACTION_MAP.other)(dist);
+      const brics = BRICS_MAP[cat] || BRICS_MAP.other;
+
+      return {
+        rank: index + 1,
+        category: cat,
+        district: dist,
+        state: item.state || "National Sector",
+        count: item.count || 1,
+        avg_urgency: item.avg_urgency || 3.5,
+        ai_rationale: `Cluster analysis indicates ${item.count} high-density citizen reports with an average urgency of ${item.avg_urgency}/5. Immediate municipal intervention recommended to alleviate public strain for ~${pop.toLocaleString()} residents.`,
+        estimated_population_affected: pop,
+        recommended_action: action,
+        brics_parallel: brics,
+      };
+    });
+  }
 
   // API Route: Gemini Multilingual Complaint Classification Pipeline & Duplicate Detection & Vision Analysis
   app.post("/api/classify", async (req, res) => {
@@ -951,7 +1356,7 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
       if (dbInstance && complaintDistrict && canUseGemini) {
         try {
           const { collection, query, where, orderBy, limit, getDocs, updateDoc, doc, increment } = await import("firebase/firestore");
-          
+
           let recentDocs: any = null;
           try {
             recentDocs = await getDocs(
@@ -1119,40 +1524,40 @@ Return this exact JSON structure:
 }`;
 
         const generationConfig = {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                category: {
-                  type: Type.STRING,
-                  description: "roads, water, electricity, sanitation, health, education, or other",
-                },
-                urgency: {
-                  type: Type.INTEGER,
-                  description: "1 to 5 integer urgency",
-                },
-                summary_english: {
-                  type: Type.STRING,
-                  description: "One sentence summary in English under 20 words",
-                },
-                language_detected: {
-                  type: Type.STRING,
-                  description: "Detected language name in English",
-                },
-                keywords: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Array of 3-5 key problem words",
-                },
-                confidence: {
-                  type: Type.STRING,
-                  description: "high, medium, or low confidence in this classification",
-                },
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              category: {
+                type: Type.STRING,
+                description: "roads, water, electricity, sanitation, health, education, or other",
               },
-              required: ["category", "urgency", "summary_english", "language_detected", "keywords", "confidence"],
+              urgency: {
+                type: Type.INTEGER,
+                description: "1 to 5 integer urgency",
+              },
+              summary_english: {
+                type: Type.STRING,
+                description: "One sentence summary in English under 20 words",
+              },
+              language_detected: {
+                type: Type.STRING,
+                description: "Detected language name in English",
+              },
+              keywords: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Array of 3-5 key problem words",
+              },
+              confidence: {
+                type: Type.STRING,
+                description: "high, medium, or low confidence in this classification",
+              },
             },
-          };
+            required: ["category", "urgency", "summary_english", "language_detected", "keywords", "confidence"],
+          },
+        };
         let classification;
         let parseError: unknown;
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1367,7 +1772,7 @@ Return this exact JSON structure:
     }
   });
 
-  // API Route: AI Priority Recommendations
+  // API Route: AI Priority Recommendations (Aggregated + National Data Joined)
   app.post("/api/prioritize", async (req, res) => {
     const authorization = String(req.headers.authorization || "");
     const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -1378,98 +1783,13 @@ Return this exact JSON structure:
     try {
       const { submissions } = req.body || {};
       const activeList = Array.isArray(submissions) && submissions.length > 0 ? submissions : [];
-
-      // Group by district + category
-      const groupMap = new Map<string, {
-        district: string;
-        state: string;
-        category: string;
-        count: number;
-        urgencies: number[];
-        upvotes: number[];
-        samples: string[];
-      }>();
-
-      for (const sub of activeList) {
-        const dist = (sub.district || "Metropolitan Area").trim();
-        const cat = (sub.category || "other").toLowerCase().trim();
-        const state = (sub.state || "").trim();
-        const key = `${dist}__${cat}`;
-
-        if (!groupMap.has(key)) {
-          groupMap.set(key, {
-            district: dist,
-            state: state,
-            category: cat,
-            count: 0,
-            urgencies: [],
-            upvotes: [],
-            samples: [],
-          });
-        }
-
-        const grp = groupMap.get(key)!;
-        grp.count += 1;
-        grp.urgencies.push(Number(sub.urgency) || 3);
-        grp.upvotes.push(Number(sub.upvotes) || 0);
-        if (grp.samples.length < 3 && sub.summary_english) {
-          grp.samples.push(sub.summary_english);
-        }
-      }
-
-      const aggregatedData = Array.from(groupMap.values()).map((g) => {
-        const avg_urgency = Number((g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(2));
-        const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
-        const weight_score = Number((g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2)).toFixed(2));
-        return {
-          district: g.district,
-          state: g.state,
-          category: g.category,
-          count: g.count,
-          avg_urgency,
-          total_upvotes,
-          weight_score,
-          submissions_sample: g.samples,
-        };
-      });
-
-      // Signature for caching (item count + top districts/categories)
-      const dataSignature = `${activeList.length}_${aggregatedData.map(d => `${d.district}:${d.category}:${d.count}`).slice(0, 5).join('|')}`;
-      const now = Date.now();
-      if (lastPriorityCache && lastPriorityCache.signature === dataSignature && now - lastPriorityCache.timestamp < 300000) {
-        return res.json({ success: true, cached: true, recommendations: lastPriorityCache.recommendations });
-      }
-
-      const fallbackRecs = () => {
-        const recommendations = buildFallbackRecommendations(aggregatedData);
-        lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations };
-        return recommendations;
-      };
-      const apiKey = process.env.GEMINI_API_KEY || "";
-      if (!apiKey || now < geminiQuotaCooldownUntil) {
-        return res.json({ success: true, engine: "rule-based", recommendations: fallbackRecs() });
-      }
-
-      try {
-        const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
-        const response = await ai.models.generateContent({
-          model: getGeminiModelName(),
-          contents: `Generate up to 10 priority infrastructure recommendations as a JSON array from this data: ${JSON.stringify(aggregatedData.slice(0, 20))}`,
-          config: { responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT } } },
-        });
-        let parsed: any[] = [];
-        try { parsed = JSON.parse(response.text || "[]"); } catch { parsed = []; }
-        const recommendations = Array.isArray(parsed) && parsed.length > 0 ? parsed : fallbackRecs();
-        lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations };
-        return res.json({ success: true, engine: getGeminiModelName(), recommendations });
-      } catch (geminiApiError: any) {
-        if (geminiApiError?.status === "RESOURCE_EXHAUSTED" || geminiApiError?.message?.includes("429")) geminiQuotaCooldownUntil = Date.now() + 60000;
-        return res.json({ success: true, engine: "rule-based", recommendations: fallbackRecs() });
-      }
+      const result = await executeDataJoinedPrioritization(activeList);
+      return res.json(result);
     } catch (prioritizeErr: any) {
       console.error("Prioritization error in server:", prioritizeErr);
       return res.json({
         success: true,
+        engine: "rule-based",
         recommendations: [],
       });
     }
@@ -1633,11 +1953,11 @@ Return this exact JSON structure:
         await sendWhatsAppMessage(
           from,
           `${detectedLanguageReply(detectedLanguage, "✅ *NagarVaani* has received your report!", "✅ *NagarVaani* ने आपकी शिकायत दर्ज कर ली है!")}\n\n` +
-            `🔖 *Tracking ID:* ${trackingId}\n` +
-            `📍 Track your complaint at:\n` +
-            `${process.env.APP_URL || "https://nagarvaani.com"}/?track=${trackingId}\n\n` +
-            `_Your report will be reviewed by policymakers. ` +
-            `Thank you for making your community better! 🏛️_`
+          `🔖 *Tracking ID:* ${trackingId}\n` +
+          `📍 Track your complaint at:\n` +
+          `${process.env.APP_URL || "https://nagarvaani.com"}/?track=${trackingId}\n\n` +
+          `_Your report will be reviewed by policymakers. ` +
+          `Thank you for making your community better! 🏛️_`
         );
       }
     } catch (err) {

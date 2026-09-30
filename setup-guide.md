@@ -1,104 +1,270 @@
-# NagarVaani — System Setup & Deployment Guide
+# NagarVaani — Setup & Deployment Guide
 
-NagarVaani is an AI-powered municipal intelligence platform for citizen grievance redressal, multilingual voice triage, and cross-border BRICS urban policy decision-making.
+NagarVaani is an AI-powered multilingual platform for citizen infrastructure
+grievance aggregation. It runs in two modes:
+
+| Mode | Firebase | Auth | What judges see |
+|---|---|---|---|
+| `demo` (default) | ❌ not needed | ❌ not needed | In-memory sandbox, seed data pre-loaded |
+| `live` | ✅ required | ✅ required | Real Firestore, Firebase Auth, full admin roles |
 
 ---
 
-## Quick Start Setup (8 Steps)
+## 0 · Prerequisites
 
-### Step 1: Create a Firebase Project
-1. Navigate to [Firebase Console](https://console.firebase.google.com/).
-2. Click **Add project** and name it `nagarvaani` (or your preferred name).
-3. Disable or enable Google Analytics as desired, then complete project creation.
-
-### Step 2: Enable Firebase Firestore, Auth, and Storage
-1. In the left navigation, go to **Build → Firestore Database** and click **Create Database** (start in Test mode or configure production security rules).
-2. Go to **Build → Authentication**, click **Get Started**, and enable **Anonymous** or **Email/Password** sign-in provider.
-3. Go to **Build → Storage**, click **Get Started**, and initialize cloud storage for complaint photo attachments.
-
-### Step 3: Configure Environment Variables
-1. In Firebase Console, open **Project Settings** (gear icon) → **General** tab.
-2. Scroll to **Your apps**, click the **Web (</>)** icon, and register the app.
-3. Copy the Firebase configuration parameters.
-4. Duplicate `.env.example` to `.env.local` (or edit existing `.env.local`) and set:
-   ```env
-   VITE_FIREBASE_API_KEY=your_firebase_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-   VITE_FIREBASE_APP_ID=your_firebase_app_id
-   ```
-
-### Step 4: Obtain Google Gemini API Key
-1. Go to [Google AI Studio](https://aistudio.google.com/).
-2. Click **Get API Key** and create a new key in a Google Cloud project.
-3. Add the key to `.env.local`:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key
-   META_APP_SECRET=your_meta_app_secret
-   WHATSAPP_WEBHOOK_VERIFY_TOKEN=your_webhook_verify_token
-   WHATSAPP_ACCESS_TOKEN=your_whatsapp_cloud_api_token
-   WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
-   INTERNAL_JOB_KEY=long-random-internal-job-key
-   ```
-
-### Step 5: Enable Google Maps API (Optional)
-1. Go to [Google Cloud Console](https://console.cloud.google.com/).
-2. Select your Google Cloud project and open **APIs & Services → Library**.
-3. Search for and enable:
-   - **Maps JavaScript API**
-   - **Geocoding API**
-4. Generate an API key under **APIs & Services → Credentials** and add it to `.env.local`:
-   ```env
-   VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-   ```
-*(Note: If no Google Maps API key is provided, NagarVaani automatically displays an interactive 2D geospatial quadrant dot grid visualizer).*
-
-### Step 6: Install Dependencies & Run Development Server
-In your terminal, execute:
 ```bash
-npm install
-npm run dev
+node --version   # ≥ 20
+npm --version    # ≥ 10
+gcloud --version # Google Cloud SDK ≥ 470
+docker --version # Docker Desktop running
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Step 7: Seed Initial Demo Data
-1. Navigate to the Policy Dashboard at [http://localhost:3000/dashboard](http://localhost:3000/dashboard).
-2. Click the **"🌱 Seed Demo Data"** or **"🔄 Refresh Demo Data"** button in the sidebar.
-3. 50+ rich civic complaint records across India, Brazil, Russia, South Africa, and China will be seeded into Firestore.
-
-### Step 8: Explore the Populated Dashboard
-- **📊 Overview Tab:** Key stats summary, cluster urgency telemetry, geospatial heatmap with 50km radius analyzer, and Gemini-ranked municipal budget allocations.
-- **🗺️ Heatmap Tab:** Full-screen density visualization with domain sector filters (Roads, Water, Electricity, Sanitation, Health) and interactive quadrant data mapping.
-- **🌍 BRICS View Tab:** Cross-border comparative matrix showcasing identical civic problem categories side-by-side with 7-day sparklines and cross-border insights.
-- **📋 All Reports Tab:** Filterable, searchable, sortable registry of all complaints with audio transcripts and AI summaries.
 
 ---
 
-## Architecture Overview
+## 1 · Local demo run (zero credentials)
 
-- **Citizen Intake Portal (`/`):** Multilingual voice input with Gemini Live Audio transcribe & image analysis.
-- **Policymaker Dashboard (`/dashboard`):** Real-time Firestore sync, Deck.gl geospatial heatmap, automated budget prioritization, and BRICS policy comparison.
-- **Backend API Routes (`/api/*`):**
-  - `/api/classify` — Gemini 2.5 categorization & urgency scoring.
-  - `/api/prioritize` — AI algorithmic budget triage.
-  - `/api/transcribe` — Multilingual audio transcription.
-  - `/api/seed` — Demo sandbox generation.
+```bash
+git clone https://github.com/rohilkohli/NagarVaani.git
+cd NagarVaani
+npm install
+APP_MODE=demo NODE_ENV=development npm run dev
+```
 
-### WhatsApp Webhook
+Open http://localhost:3000 — seed data is pre-loaded, no login needed.
 
-Meta sends signed events to `POST /api/whatsapp/webhook`. Production requires
-`META_APP_SECRET` and `INTERNAL_JOB_KEY`; development/demo mode may omit the
-Meta secret and logs that signature verification was skipped. To exercise the
-signed local flow, start the server with those variables and run:
+To test with Gemini classification:
+
+```bash
+APP_MODE=demo GEMINI_API_KEY=<your-key> npm run dev
+```
+
+---
+
+## 2 · Acceptance test (local production build)
+
+Verify the acceptance criteria from the task spec:
+
+```bash
+# Build the production bundle + server binary
+APP_MODE=demo NODE_ENV=production GEMINI_API_KEY=x npm run build
+
+# Start the production server
+APP_MODE=demo NODE_ENV=production GEMINI_API_KEY=x npm start
+
+# In a second terminal — smoke test must pass
+npm run smoke -- http://localhost:3000
+```
+
+---
+
+## 3 · Deploy to Cloud Run (demo mode) — manual steps
+
+### Step 1 — Authenticate and set project
+
+```bash
+gcloud auth login
+gcloud auth configure-docker
+gcloud config set project YOUR_PROJECT_ID
+```
+
+### Step 2 — Enable required APIs (one-time)
+
+```bash
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  containerregistry.googleapis.com \
+  secretmanager.googleapis.com
+```
+
+### Step 3 — Store the Gemini API key in Secret Manager
+
+> Only GEMINI_API_KEY is required for demo mode. If you already have it stored,
+> skip this step.
+
+```bash
+# Create (first time)
+echo -n "YOUR_GEMINI_API_KEY" | \
+  gcloud secrets create GEMINI_API_KEY \
+    --data-file=- \
+    --replication-policy=automatic
+
+# Or update an existing secret
+echo -n "YOUR_GEMINI_API_KEY" | \
+  gcloud secrets versions add GEMINI_API_KEY --data-file=-
+```
+
+### Step 4 — Grant Cloud Run the secret accessor role
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### Step 5 — Build and push the Docker image
+
+```bash
+IMAGE="gcr.io/YOUR_PROJECT_ID/nagarvaani"
+GIT_SHA=$(git rev-parse --short HEAD)
+
+npm run build
+docker build -t "${IMAGE}:${GIT_SHA}" -t "${IMAGE}:latest" .
+docker push "${IMAGE}:${GIT_SHA}"
+docker push "${IMAGE}:latest"
+```
+
+### Step 6 — Deploy to Cloud Run
+
+```bash
+gcloud run deploy nagarvaani \
+  --image "gcr.io/YOUR_PROJECT_ID/nagarvaani:${GIT_SHA}" \
+  --region asia-south1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --memory 512Mi \
+  --cpu 1 \
+  --min-instances 0 \
+  --max-instances 1 \
+  --set-env-vars "NODE_ENV=production,APP_MODE=demo" \
+  --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest"
+```
+
+> **`--max-instances=1`** is intentional: the in-memory idempotency LRU and
+> demo sandbox are per-instance. One instance handles demo load comfortably.
+> For live mode, raise this and switch to a shared queue / Firestore idempotency.
+
+### Step 7 — Retrieve the service URL and update APP_URL
+
+```bash
+SERVICE_URL=$(gcloud run services describe nagarvaani \
+  --region asia-south1 \
+  --format 'value(status.url)')
+
+echo "Live at: ${SERVICE_URL}"
+
+gcloud run services update nagarvaani \
+  --region asia-south1 \
+  --update-env-vars "APP_URL=${SERVICE_URL}"
+```
+
+### Step 8 — Verify health and run smoke test
+
+```bash
+curl -f "${SERVICE_URL}/api/health"
+curl -f "${SERVICE_URL}/api/ready"
+npm run smoke -- "${SERVICE_URL}"
+```
+
+### Or run everything in one command
+
+```bash
+# The script does steps 5-8 automatically:
+bash deploy.sh
+```
+
+---
+
+## 4 · Automated deploy via Cloud Build
+
+Trigger a full build+deploy+health-check pipeline:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml .
+```
+
+The build submits the local repo context, runs `docker build`, pushes the image,
+deploys to Cloud Run (asia-south1, max-instances=1, APP_MODE=demo), waits up to
+90 seconds for `/api/health`, then verifies `/api/ready`.
+
+---
+
+## 5 · Switching to live mode (full Firebase)
+
+Additional secrets needed:
+
+```bash
+# Firebase Admin service account JSON
+gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON \
+  --data-file=firebase-service-account.json \
+  --replication-policy=automatic
+
+# Staff session signing secret (≥32 random chars)
+openssl rand -base64 32 | \
+  gcloud secrets create ADMIN_SESSION_SECRET --data-file=-
+
+# Internal job dispatch key
+openssl rand -base64 32 | \
+  gcloud secrets create INTERNAL_JOB_KEY --data-file=-
+```
+
+Deploy in live mode:
+
+```bash
+APP_MODE=live bash deploy.sh
+```
+
+This attaches all three secrets and sets `APP_MODE=live`.
+
+---
+
+## 6 · WhatsApp integration
+
+Requires live mode plus:
+
+```bash
+echo -n "$WHATSAPP_ACCESS_TOKEN" | \
+  gcloud secrets create WHATSAPP_ACCESS_TOKEN --data-file=-
+```
+
+Set the webhook URL in Meta Developer Portal:
+
+```
+https://YOUR_CLOUD_RUN_URL/api/whatsapp/webhook
+```
+
+Verify token: set `WHATSAPP_WEBHOOK_VERIFY_TOKEN` as an env var on the service.
+
+Local testing:
 
 ```bash
 META_APP_SECRET=demo-meta-secret INTERNAL_JOB_KEY=local-job-key npm run dev
+# In another terminal:
 META_APP_SECRET=demo-meta-secret npm exec tsx scripts/simulate-whatsapp.ts
 ```
 
-Set `WHATSAPP_SAMPLE_IMAGE_ID` and `WHATSAPP_SAMPLE_AUDIO_ID` to real Graph API
-media IDs when testing image and audio downloads. Text submissions are classified
-through the authenticated internal job path and appear in the dashboard after
-processing.
+---
+
+## 7 · Environment variables reference
+
+| Variable | Demo | Live | Description |
+|---|---|---|---|
+| `APP_MODE` | `demo` | `live` | Runtime mode |
+| `NODE_ENV` | `production` | `production` | Node environment |
+| `GEMINI_API_KEY` | optional | required | From aistudio.google.com |
+| `APP_URL` | auto-set | auto-set | Cloud Run service URL |
+| `ADMIN_SESSION_SECRET` | ❌ | required | Staff JWT signing secret |
+| `INTERNAL_JOB_KEY` | ❌ | required | Internal job dispatch auth |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | ❌ | required | Firebase Admin credentials |
+| `VITE_FIREBASE_*` | ❌ | required | Client Firebase config |
+| `VITE_GOOGLE_MAPS_API_KEY` | ❌ | optional | Maps heatmap |
+| `META_APP_SECRET` | ❌ | required for WhatsApp | Webhook signature |
+| `WHATSAPP_ACCESS_TOKEN` | ❌ | required for WhatsApp | Cloud API token |
+| `RETENTION_DAYS` | — | 365 | Retention policy (days) |
+
+---
+
+## 8 · Scheduled retention job
+
+In live mode, schedule a daily Pub/Sub-triggered Cloud Run job:
+
+```bash
+gcloud scheduler jobs create http nagarvaani-retention \
+  --schedule="0 2 * * *" \
+  --uri="${SERVICE_URL}/api/internal/retention" \
+  --message-body='{"retentionDays":365}' \
+  --headers="X-Internal-Job-Key=YOUR_INTERNAL_JOB_KEY,Content-Type=application/json" \
+  --location=asia-south1
+```

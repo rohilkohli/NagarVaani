@@ -5,6 +5,9 @@ export interface Submission {
   id?: string;
   firestoreId?: string;
   text: string;
+  original_text?: string;
+  detected_language?: string;
+  english_translation?: string;
   language: string;
   category: ComplaintCategory;
   urgency: 1 | 2 | 3 | 4 | 5;
@@ -14,6 +17,7 @@ export interface Submission {
   country: string;
   lat: number;
   lng: number;
+  synthetic?: boolean;
   photo_url?: string;
   created_at: Date;
   status: 'pending' | 'classified' | 'classification_failed' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority' | 'duplicate';
@@ -43,13 +47,30 @@ export interface Submission {
 
 export interface PriorityRecommendation {
   rank: number;
+  raw_rank?: number;
+  rank_delta?: number;
+  need_weighted_score?: number;
+  complaints_per_100k?: number | null;
+  deprivation_factor?: number;
+  unresolved_age_factor?: number;
+  project_title?: string;
   category: string;
   district: string;
   state?: string;
+  country?: string;
   count: number;
   avg_urgency: number;
-  ai_rationale: string;
+  population_2011?: number | null;
+  literacy_rate_2011?: number | null;
+  aspirational_district?: boolean | null;
+  relevant_scheme?: string | null;
+  owning_department?: string;
+  estimated_beneficiaries?: number | null;
   estimated_population_affected: number;
+  evidence?: string;
+  confidence?: 'high' | 'medium' | 'low' | 'insufficient_data';
+  engine?: 'gemini' | 'rule-based';
+  ai_rationale: string;
   recommended_action?: string;
   brics_parallel?: string;
 }

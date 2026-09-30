@@ -1,0 +1,582 @@
+[
+  {
+    "state": "Bihar",
+    "district": "Patna",
+    "population_2011": 5838465,
+    "literacy_rate_2011": 70.68,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Bihar",
+    "district": "Gaya",
+    "population_2011": 4359700,
+    "literacy_rate_2011": 63.67,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Bihar",
+    "district": "Muzaffarpur",
+    "population_2011": 4801062,
+    "literacy_rate_2011": 63.56,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Bihar",
+    "district": "Araria",
+    "population_2011": 2811569,
+    "literacy_rate_2011": 53.53,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Rajasthan",
+    "district": "Jaipur",
+    "population_2011": 6626178,
+    "literacy_rate_2011": 75.51,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Rajasthan",
+    "district": "Jaisalmer",
+    "population_2011": 669919,
+    "literacy_rate_2011": 57.22,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Rajasthan",
+    "district": "Sirohi",
+    "population_2011": 1036346,
+    "literacy_rate_2011": 55.25,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Madhya Pradesh",
+    "district": "Bhopal",
+    "population_2011": 2368145,
+    "literacy_rate_2011": 80.4,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Madhya Pradesh",
+    "district": "Barwani",
+    "population_2011": 1385881,
+    "literacy_rate_2011": 49.08,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Madhya Pradesh",
+    "district": "Vidisha",
+    "population_2011": 1458875,
+    "literacy_rate_2011": 70.53,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttar Pradesh",
+    "district": "Lucknow",
+    "population_2011": 4589838,
+    "literacy_rate_2011": 77.29,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttar Pradesh",
+    "district": "Varanasi",
+    "population_2011": 3676841,
+    "literacy_rate_2011": 75.6,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttar Pradesh",
+    "district": "Bahraich",
+    "population_2011": 3487731,
+    "literacy_rate_2011": 49.32,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttar Pradesh",
+    "district": "Balrampur",
+    "population_2011": 2148665,
+    "literacy_rate_2011": 49.51,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttar Pradesh",
+    "district": "Chitrakoot",
+    "population_2011": 991730,
+    "literacy_rate_2011": 65.05,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "West Bengal",
+    "district": "Kolkata",
+    "population_2011": 4496694,
+    "literacy_rate_2011": 86.31,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "West Bengal",
+    "district": "Birbhum",
+    "population_2011": 3502404,
+    "literacy_rate_2011": 70.68,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "West Bengal",
+    "district": "Purulia",
+    "population_2011": 2930115,
+    "literacy_rate_2011": 64.48,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Mumbai Suburban",
+    "population_2011": 9356962,
+    "literacy_rate_2011": 89.91,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Mumbai City",
+    "population_2011": 3085411,
+    "literacy_rate_2011": 89.21,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Pune",
+    "population_2011": 9429408,
+    "literacy_rate_2011": 86.15,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Nagpur",
+    "population_2011": 4653570,
+    "literacy_rate_2011": 88.39,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Gadchiroli",
+    "population_2011": 1072942,
+    "literacy_rate_2011": 74.36,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Maharashtra",
+    "district": "Nandurbar",
+    "population_2011": 1648295,
+    "literacy_rate_2011": 64.38,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Tamil Nadu",
+    "district": "Chennai",
+    "population_2011": 4646732,
+    "literacy_rate_2011": 90.18,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Tamil Nadu",
+    "district": "Ramanathapuram",
+    "population_2011": 1353445,
+    "literacy_rate_2011": 80.72,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Tamil Nadu",
+    "district": "Virudhunagar",
+    "population_2011": 1942288,
+    "literacy_rate_2011": 80.15,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Telangana",
+    "district": "Hyderabad",
+    "population_2011": 3943323,
+    "literacy_rate_2011": 83.25,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Telangana",
+    "district": "Bhadradri Kothagudem",
+    "population_2011": 1069261,
+    "literacy_rate_2011": 66.4,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Andhra Pradesh",
+    "district": "Visakhapatnam",
+    "population_2011": 4290589,
+    "literacy_rate_2011": 66.91,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Andhra Pradesh",
+    "district": "Vizianagaram",
+    "population_2011": 2344474,
+    "literacy_rate_2011": 58.89,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Gujarat",
+    "district": "Ahmedabad",
+    "population_2011": 7214225,
+    "literacy_rate_2011": 85.31,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Gujarat",
+    "district": "Dahod",
+    "population_2011": 2127086,
+    "literacy_rate_2011": 58.82,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Gujarat",
+    "district": "Narmada",
+    "population_2011": 590297,
+    "literacy_rate_2011": 72.31,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Karnataka",
+    "district": "Bengaluru Urban",
+    "population_2011": 9621551,
+    "literacy_rate_2011": 87.67,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Karnataka",
+    "district": "Raichur",
+    "population_2011": 1928812,
+    "literacy_rate_2011": 59.56,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Karnataka",
+    "district": "Yadgir",
+    "population_2011": 1174271,
+    "literacy_rate_2011": 51.83,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Kerala",
+    "district": "Thiruvananthapuram",
+    "population_2011": 3301427,
+    "literacy_rate_2011": 93.02,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Kerala",
+    "district": "Wayanad",
+    "population_2011": 817420,
+    "literacy_rate_2011": 89.03,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Punjab",
+    "district": "Amritsar",
+    "population_2011": 2490656,
+    "literacy_rate_2011": 76.27,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Punjab",
+    "district": "Firozpur",
+    "population_2011": 2029074,
+    "literacy_rate_2011": 68.92,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Haryana",
+    "district": "Gurugram",
+    "population_2011": 1514432,
+    "literacy_rate_2011": 84.7,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Haryana",
+    "district": "Nuh",
+    "population_2011": 1089263,
+    "literacy_rate_2011": 54.08,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttarakhand",
+    "district": "Dehradun",
+    "population_2011": 1696694,
+    "literacy_rate_2011": 84.25,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Uttarakhand",
+    "district": "Haridwar",
+    "population_2011": 1890422,
+    "literacy_rate_2011": 73.43,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Himachal Pradesh",
+    "district": "Shimla",
+    "population_2011": 814010,
+    "literacy_rate_2011": 83.64,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Himachal Pradesh",
+    "district": "Chamba",
+    "population_2011": 519080,
+    "literacy_rate_2011": 72.17,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Jharkhand",
+    "district": "Ranchi",
+    "population_2011": 2914253,
+    "literacy_rate_2011": 76.06,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Jharkhand",
+    "district": "Dumka",
+    "population_2011": 1321442,
+    "literacy_rate_2011": 61.02,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Assam",
+    "district": "Kamrup Metropolitan",
+    "population_2011": 1253938,
+    "literacy_rate_2011": 88.71,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Assam",
+    "district": "Baksa",
+    "population_2011": 950075,
+    "literacy_rate_2011": 69.25,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Assam",
+    "district": "Darrang",
+    "population_2011": 928500,
+    "literacy_rate_2011": 63.08,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Odisha",
+    "district": "Khordha",
+    "population_2011": 2251673,
+    "literacy_rate_2011": 86.88,
+    "aspirational_district": false,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Odisha",
+    "district": "Koraput",
+    "population_2011": 1379647,
+    "literacy_rate_2011": 49.21,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Odisha",
+    "district": "Kalahandi",
+    "population_2011": 1576869,
+    "literacy_rate_2011": 59.22,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Odisha",
+    "district": "Nabarangpur",
+    "population_2011": 1220946,
+    "literacy_rate_2011": 46.43,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Chhattisgarh",
+    "district": "Bastar",
+    "population_2011": 834375,
+    "literacy_rate_2011": 53.15,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  },
+  {
+    "state": "Chhattisgarh",
+    "district": "Bijapur",
+    "population_2011": 255230,
+    "literacy_rate_2011": 40.86,
+    "aspirational_district": true,
+    "tap_water_coverage_pct": null,
+    "pmgsy_road_connectivity_pct": null,
+    "sanitation_coverage_pct": null
+  }
+]

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Sparkles,
   AlertTriangle,
@@ -8,22 +8,27 @@ import {
   Clock,
   RotateCcw,
   Search,
-  Filter,
   CheckCircle2,
   Copy,
   Check,
   Building2,
   ArrowUpRight,
-  TrendingUp,
   ShieldAlert,
   Flame,
   FileText,
-  DollarSign,
   ChevronDown,
   ChevronUp,
+  Info,
+  ArrowUpDown,
+  ExternalLink,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { PriorityRecommendation, Submission } from "@/lib/types";
+import {
+  joinAndScoreClusters,
+  buildDeterministicRecommendations,
+  PRIORITY_FORMULA_TOOLTIP,
+} from "@/lib/priority";
+import { isDemoMode } from "@/lib/appMode";
 
 interface PriorityRankingsViewProps {
   submissions?: Submission[];
@@ -76,102 +81,72 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
   },
 };
 
-const ESTIMATED_BUDGET_MAP: Record<string, number> = {
-  roads: 24000000,     // ₹2.4 Cr
-  water: 18000000,     // ₹1.8 Cr
-  electricity: 15000000,// ₹1.5 Cr
-  sanitation: 12000000, // ₹1.2 Cr
-  health: 32000000,    // ₹3.2 Cr
-  education: 14000000, // ₹1.4 Cr
-  other: 9000000,      // ₹90 L
-};
-
 export default function PriorityRankingsView({
   submissions = [],
   isLoading = false,
   onRefresh,
 }: PriorityRankingsViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [urgencyThreshold, setUrgencyThreshold] = useState<string>("all");
+  const [urgencyThreshold] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [sortBy, setSortBy] = useState<"rank" | "urgency" | "population" | "reports">("rank");
+  const [sortBy, setSortBy] = useState<"rank" | "raw_rank" | "urgency" | "population" | "reports">("rank");
   const [expandedRanks, setExpandedRanks] = useState<Set<number>>(new Set([1, 2]));
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
   const [approvedDirectives, setApprovedDirectives] = useState<Set<number>>(new Set());
+  const [apiRecommendations, setApiRecommendations] = useState<PriorityRecommendation[] | null>(null);
+  const [engineMode, setEngineMode] = useState<"gemini" | "rule-based">("rule-based");
+  const [fetchingApi, setFetchingApi] = useState<boolean>(false);
 
-  // Aggregate local fallback clusters if API is pending or inactive
-  const prioritizedData = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        district: string;
-        state: string;
-        category: string;
-        count: number;
-        urgencies: number[];
-        upvotes: number[];
-        countries: Set<string>;
-      }
-    >();
-
-    for (const s of submissions) {
-      const d = s.district || "Metropolitan Zone";
-      const c = (s.category || "roads").toLowerCase();
-      const key = `${d}__${c}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          district: d,
-          state: s.state || "National Sector",
-          category: c,
-          count: 0,
-          urgencies: [],
-          upvotes: [],
-          countries: new Set([s.country || "India"]),
-        });
-      }
-      const g = map.get(key)!;
-      g.count += 1;
-      g.urgencies.push(Number(s.urgency) || 3);
-      g.upvotes.push(Number(s.upvotes) || 0);
-      if (s.country) g.countries.add(s.country);
-    }
-
-    const sorted = Array.from(map.values())
-      .map((g) => {
-        const avg_urgency = Number(
-          (g.urgencies.reduce((a, b) => a + b, 0) / (g.urgencies.length || 1)).toFixed(1)
-        );
-        const total_upvotes = g.upvotes.reduce((a, b) => a + b, 0);
-        const weight_score = g.count * avg_urgency * (1 + (total_upvotes / (g.count || 1)) * 0.2);
-        return {
-          ...g,
-          avg_urgency,
-          total_upvotes,
-          weight_score,
-        };
-      })
-      .sort((a, b) => b.weight_score - a.weight_score)
-      .slice(0, 10);
-
-    return sorted.map((item, index): PriorityRecommendation => {
-      const cat = item.category;
-      const budgetBase = ESTIMATED_BUDGET_MAP[cat] || 15000000;
-      const budgetCalc = Math.round((budgetBase * (item.count / 3) * (item.avg_urgency / 3)) / 100000) * 100000;
-
-      return {
-        rank: index + 1,
-        category: item.category,
-        district: item.district,
-        state: item.state,
-        count: item.count,
-        avg_urgency: item.avg_urgency,
-        estimated_population_affected: item.count * 15000 + (item.avg_urgency >= 4 ? 20000 : 5000),
-        ai_rationale: `Multimodal telemetry from ${item.district} (${item.state}) confirms ${item.count} high-severity civic grievance records with a composite criticality score of ${item.avg_urgency}/5. Geospatial analysis identifies systemic failure across central transit corridors, risking immediate infrastructure gridlock.`,
-        recommended_action: `Authorize Phase-1 Municipal Capital Allocation of ₹${(budgetCalc / 10000000).toFixed(2)} Cr to initiate contractor tender and dispatch emergency field crews within 14 days.`,
-        brics_parallel: `Cross-border comparative analysis aligns this telemetry with smart infrastructure intervention frameworks implemented in São Paulo (Brazil) and Ekurhuleni (South Africa).`,
-      };
-    });
+  // Deterministic national-data-joined baseline
+  const localPrioritizedData = useMemo(() => {
+    const joined = joinAndScoreClusters(submissions);
+    return buildDeterministicRecommendations(joined);
   }, [submissions]);
+
+  const fetchFromApi = useCallback(async () => {
+    if (!submissions || submissions.length === 0) {
+      setApiRecommendations(null);
+      setEngineMode("rule-based");
+      return;
+    }
+    setFetchingApi(true);
+    try {
+      const endpoint = isDemoMode() ? "/api/demo/prioritize" : "/api/prioritize";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(!isDemoMode() && typeof window !== "undefined" && sessionStorage.getItem("nv_dashboard_token")
+            ? { Authorization: `Bearer ${sessionStorage.getItem("nv_dashboard_token")}` }
+            : {}),
+        },
+        body: JSON.stringify({ submissions }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+          setApiRecommendations(data.recommendations);
+          setEngineMode(data.engine === "gemini" ? "gemini" : "rule-based");
+          return;
+        }
+      }
+      setApiRecommendations(null);
+      setEngineMode("rule-based");
+    } catch {
+      setApiRecommendations(null);
+      setEngineMode("rule-based");
+    } finally {
+      setFetchingApi(false);
+    }
+  }, [submissions]);
+
+  useEffect(() => {
+    fetchFromApi();
+  }, [fetchFromApi]);
+
+  const prioritizedData = apiRecommendations && apiRecommendations.length > 0
+    ? apiRecommendations
+    : localPrioritizedData;
 
   // Filter and sort items
   const filteredItems = useMemo(() => {
@@ -188,21 +163,32 @@ export default function PriorityRankingsView({
           item.district.toLowerCase().includes(searchQuery.toLowerCase()) ||
           item.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (item.state && item.state.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          item.ai_rationale.toLowerCase().includes(searchQuery.toLowerCase());
+          item.ai_rationale.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (item.project_title && item.project_title.toLowerCase().includes(searchQuery.toLowerCase()));
 
         return matchesCategory && matchesUrgency && matchesSearch;
       })
       .sort((a, b) => {
+        if (sortBy === "raw_rank") return (a.raw_rank ?? a.rank) - (b.raw_rank ?? b.rank);
         if (sortBy === "urgency") return b.avg_urgency - a.avg_urgency;
-        if (sortBy === "population") return b.estimated_population_affected - a.estimated_population_affected;
+        if (sortBy === "population") return (b.population_2011 ?? 0) - (a.population_2011 ?? 0);
         if (sortBy === "reports") return b.count - a.count;
         return a.rank - b.rank;
       });
   }, [prioritizedData, selectedCategory, urgencyThreshold, searchQuery, sortBy]);
 
-  // Aggregate metrics
-  const totalCitizensImpacted = useMemo(() => {
-    return prioritizedData.reduce((acc, curr) => acc + curr.estimated_population_affected, 0);
+  // Aggregate metrics from verified Census 2011 figures (never fabricated multipliers)
+  const totalCensusPopulationJoined = useMemo(() => {
+    const seenDistricts = new Set<string>();
+    let sum = 0;
+    for (const item of prioritizedData) {
+      const key = item.district.toLowerCase();
+      if (!seenDistricts.has(key) && item.population_2011 !== null && item.population_2011 !== undefined) {
+        seenDistricts.add(key);
+        sum += item.population_2011;
+      }
+    }
+    return sum;
   }, [prioritizedData]);
 
   const avgCriticality = useMemo(() => {
@@ -211,11 +197,8 @@ export default function PriorityRankingsView({
     return (sum / prioritizedData.length).toFixed(1);
   }, [prioritizedData]);
 
-  const totalEstimatedCapital = useMemo(() => {
-    return prioritizedData.reduce((acc, curr) => {
-      const base = ESTIMATED_BUDGET_MAP[curr.category] || 15000000;
-      return acc + base * (curr.count / 3);
-    }, 0);
+  const rankShiftedCount = useMemo(() => {
+    return prioritizedData.filter((item) => (item.rank_delta ?? 0) !== 0).length;
   }, [prioritizedData]);
 
   const toggleExpand = (rank: number) => {
@@ -231,13 +214,17 @@ export default function PriorityRankingsView({
   };
 
   const handleCopyDirective = (item: PriorityRecommendation) => {
-    const text = `NAGARVAANI MUNICIPAL DIRECTIVE #${item.rank}
+    const text = `NAGARVAANI MUNICIPAL DIRECTIVE #${item.rank} (Raw Count Rank: #${item.raw_rank ?? item.rank})
+Project Title: ${item.project_title || `${item.district} ${item.category} Intervention`}
 Category: ${item.category.toUpperCase()}
 Target District: ${item.district}, ${item.state}
+Need-Weighted Score: ${item.need_weighted_score ?? "N/A"} (Complaints/100k: ${item.complaints_per_100k ?? "insufficient data"})
 Urgency Index: ${item.avg_urgency}/5.0
-Estimated Impact: ~${item.estimated_population_affected.toLocaleString()} citizens
-Recommended 14-Day Action: ${item.recommended_action}
-AI Strategic Rationale: ${item.ai_rationale}`;
+Census 2011 District Population: ${item.population_2011 !== null && item.population_2011 !== undefined ? item.population_2011.toLocaleString() : "insufficient data"}
+Relevant Scheme: ${item.relevant_scheme || "None (Municipal Budget)"}
+Owning Department: ${item.owning_department || "District Administration"}
+Evidence: ${item.evidence || item.ai_rationale}
+Recommended Action: ${item.recommended_action}`;
 
     navigator.clipboard.writeText(text);
     setCopiedRank(item.rank);
@@ -266,34 +253,59 @@ AI Strategic Rationale: ${item.ai_rationale}`;
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div className="space-y-1.5 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/30 text-[12px] font-semibold text-[var(--brand-secondary)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Gemini 3.7 Flash • Algorithmic Triage Engine</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/30 text-[12px] font-semibold text-[var(--brand-secondary)]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>National Data-Joined Priority Engine</span>
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
+                  engineMode === "gemini"
+                    ? "bg-[rgba(16,185,129,0.12)] text-[var(--green)] border-[rgba(16,185,129,0.28)]"
+                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                }`}
+              >
+                {engineMode === "gemini" ? "gemini" : "rule-based"}
+              </span>
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[11px] text-[var(--text-secondary)] cursor-help"
+                title={PRIORITY_FORMULA_TOOLTIP}
+                aria-label={PRIORITY_FORMULA_TOOLTIP}
+              >
+                <Info className="w-3.5 h-3.5 text-[var(--brand-secondary)]" />
+                <span>Need-Weighted Formula Tooltip</span>
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-primary)]">
-              Municipal Investment Priorities
+              Municipal & National Investment Priorities
             </h1>
             <p className="text-[13px] sm:text-[14px] text-[var(--text-secondary)] leading-relaxed">
-              Real-time multi-criteria decision matrix synthesizing citizen grievance density, severity weighting, demographic exposure, and cross-border BRICS urban resilience models.
+              Combines citizen grievance clusters with published <strong>Census 2011</strong> district population &amp; literacy rates, <strong>NITI Aayog Aspirational District</strong> flags, and national scheme mappings (JJM, PMGSY, SBM).
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {onRefresh && (
-              <button
-                type="button"
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="h-9 px-3.5 rounded-[var(--radius-sm)] border border-[var(--border-base)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface)] hover:border-[var(--border-strong)] text-[12px] font-medium text-[var(--text-primary)] flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
-              >
-                <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-                <span>Re-analyze Telemetry</span>
-              </button>
-            )}
-            <div className="px-3 py-1.5 rounded-[var(--radius-sm)] bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.2)] text-[12px] font-semibold text-[var(--green)] flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
-              <span>Active Model Sync</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                fetchFromApi();
+                onRefresh?.();
+              }}
+              disabled={isLoading || fetchingApi}
+              className="h-9 px-3.5 rounded-[var(--radius-sm)] border border-[var(--border-base)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface)] hover:border-[var(--border-strong)] text-[12px] font-medium text-[var(--text-primary)] flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isLoading || fetchingApi ? "animate-spin" : ""}`} />
+              <span>Re-analyze Telemetry</span>
+            </button>
+            <a
+              href="/data/SOURCES.md"
+              target="_blank"
+              rel="noreferrer"
+              className="h-9 px-3 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] hover:border-[var(--brand-primary)] text-[12px] font-medium text-[var(--brand-secondary)] flex items-center gap-1.5"
+            >
+              <span>Data Sources</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
 
@@ -302,59 +314,168 @@ AI Strategic Rationale: ${item.ai_rationale}`;
           <div className="p-3.5 rounded-[var(--radius-md)] bg-[var(--bg-base)]/60 border border-[var(--border-dim)]">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">
               <AlertTriangle className="w-3.5 h-3.5 text-[var(--red)]" />
-              <span>Top Critical Node</span>
+              <span>Top Need-Weighted Node</span>
             </div>
             <div className="text-[18px] sm:text-[20px] font-bold text-[var(--text-primary)] mt-1 truncate">
-              {prioritizedData[0]?.district || "Metropolitan Zone"}
+              {prioritizedData[0]?.district || "N/A"}
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 capitalize">
-              {prioritizedData[0]?.category} Sector • Rank #1
+              {prioritizedData[0]?.category} • Score {prioritizedData[0]?.need_weighted_score?.toFixed(2) ?? "0.00"}
             </div>
           </div>
 
           <div className="p-3.5 rounded-[var(--radius-md)] bg-[var(--bg-base)]/60 border border-[var(--border-dim)]">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">
               <Users className="w-3.5 h-3.5 text-[var(--brand-secondary)]" />
-              <span>Citizens Protected</span>
+              <span>Census 2011 District Pop</span>
             </div>
             <div className="text-[18px] sm:text-[20px] font-bold text-[var(--text-primary)] mt-1 font-mono">
-              ~{(totalCitizensImpacted / 1000).toFixed(0)}k
+              {totalCensusPopulationJoined > 0
+                ? `${(totalCensusPopulationJoined / 1000000).toFixed(2)}M`
+                : "insufficient data"}
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-              Across top 10 priority clusters
+              Verified Census 2011 PCA coverage
             </div>
           </div>
 
           <div className="p-3.5 rounded-[var(--radius-md)] bg-[var(--bg-base)]/60 border border-[var(--border-dim)]">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">
               <Flame className="w-3.5 h-3.5 text-[var(--amber)]" />
-              <span>Avg Criticality Index</span>
+              <span>Mean Urgency</span>
             </div>
             <div className="text-[18px] sm:text-[20px] font-bold text-[var(--amber)] mt-1 font-mono">
               {avgCriticality} <span className="text-[13px] text-[var(--text-tertiary)] font-normal">/ 5.0</span>
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-              High urgency weighted score
+              Across {prioritizedData.length} priority clusters
             </div>
           </div>
 
           <div className="p-3.5 rounded-[var(--radius-md)] bg-[var(--bg-base)]/60 border border-[var(--border-dim)]">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">
-              <DollarSign className="w-3.5 h-3.5 text-[var(--green)]" />
-              <span>Est. Capital Need</span>
+              <ArrowUpDown className="w-3.5 h-3.5 text-[var(--green)]" />
+              <span>Priority Rank Shifts</span>
             </div>
             <div className="text-[18px] sm:text-[20px] font-bold text-[var(--green)] mt-1 font-mono">
-              ₹{(totalEstimatedCapital / 10000000).toFixed(1)} Cr
+              {rankShiftedCount} / {prioritizedData.length}
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-              Targeted 30-day intervention
+              Re-ranked by per-capita need &amp; deprivation
             </div>
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. FILTER CONTROLS & SEARCH BAR */}
+      {/* 2. RAW COMPLAINT COUNT RANK VS NEED-WEIGHTED RANK COMPARISON VIEW         */}
+      {/* ========================================================================= */}
+      <div
+        className="bg-[var(--bg-surface)] border border-[var(--border-base)] rounded-[var(--radius-lg)] p-5 shadow-sm"
+        id="raw-vs-need-weighted-comparison"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[var(--border-dim)]">
+          <div>
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="w-4 h-4 text-[var(--brand-secondary)]" />
+              <h2 className="text-[16px] font-bold text-[var(--text-primary)]">
+                Raw Complaint Count Rank vs Need-Weighted Rank
+              </h2>
+            </div>
+            <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+              Demonstrates how joining Census 2011 population (complaints per 100k), literacy gap, and NITI Aayog Aspirational District flags re-orders priorities compared to raw complaint volume alone.
+            </p>
+          </div>
+          <div
+            className="text-[11px] font-mono text-[var(--text-tertiary)] bg-[var(--bg-elevated)] px-2.5 py-1.5 rounded border border-[var(--border-dim)] cursor-help shrink-0"
+            title={PRIORITY_FORMULA_TOOLTIP}
+          >
+            score = (c/100k) × urgency × (1 + deprivation) × age
+          </div>
+        </div>
+
+        <div className="overflow-x-auto mt-3">
+          <table className="w-full text-left border-collapse text-[12px]">
+            <thead>
+              <tr className="border-b border-[var(--border-dim)] text-[11px] uppercase tracking-wider text-[var(--text-tertiary)]">
+                <th className="py-2.5 pr-3">District &amp; Sector</th>
+                <th className="py-2.5 px-3 text-right">Raw Complaints</th>
+                <th className="py-2.5 px-3 text-center">Raw Rank</th>
+                <th className="py-2.5 px-3 text-right">Census 2011 Pop</th>
+                <th className="py-2.5 px-3 text-right">Per 100k</th>
+                <th className="py-2.5 px-3 text-right">Deprivation</th>
+                <th className="py-2.5 px-3 text-right">Need Score</th>
+                <th className="py-2.5 px-3 text-center">Need Rank</th>
+                <th className="py-2.5 pl-3 text-right">Rank Shift</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-dim)]">
+              {prioritizedData.map((item) => {
+                const rawRank = item.raw_rank ?? item.rank;
+                const delta = item.rank_delta ?? rawRank - item.rank;
+                return (
+                  <tr
+                    key={`${item.district}-${item.category}`}
+                    className="hover:bg-[var(--bg-elevated)]/50 transition-colors"
+                  >
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[var(--text-primary)]">{item.district}</span>
+                        <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-dim)]">
+                          {item.category}
+                        </span>
+                        {item.aspirational_district && (
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Aspirational
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-tertiary)]">{item.state}</div>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[var(--text-primary)]">
+                      {item.count}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono text-[var(--text-secondary)]">
+                      #{rawRank}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[var(--text-secondary)]">
+                      {item.population_2011 !== null && item.population_2011 !== undefined
+                        ? item.population_2011.toLocaleString()
+                        : "insufficient data"}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[var(--text-secondary)]">
+                      {item.complaints_per_100k !== null && item.complaints_per_100k !== undefined
+                        ? item.complaints_per_100k.toFixed(3)
+                        : "fallback"}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[var(--text-secondary)]">
+                      +{((item.deprivation_factor ?? 0) * 100).toFixed(1)}%
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[var(--text-primary)]">
+                      {item.need_weighted_score !== undefined ? item.need_weighted_score.toFixed(3) : "N/A"}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold text-[var(--brand-secondary)]">
+                      #{item.rank}
+                    </td>
+                    <td className="py-2.5 pl-3 text-right font-mono font-semibold">
+                      {delta > 0 ? (
+                        <span className="text-[var(--green)]">▲ +{delta} spots</span>
+                      ) : delta < 0 ? (
+                        <span className="text-amber-400">▼ {delta} spots</span>
+                      ) : (
+                        <span className="text-[var(--text-tertiary)]">— 0</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. FILTER CONTROLS & SEARCH BAR */}
       {/* ========================================================================= */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-dim)] rounded-[var(--radius-md)] p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         {/* Category Filter Pills */}
@@ -398,7 +519,7 @@ AI Strategic Rationale: ${item.ai_rationale}`;
             <Search className="w-3.5 h-3.5 text-[var(--text-tertiary)] absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search district, issue..."
+              placeholder="Search district, scheme, issue..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-8 pl-8 pr-3 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--brand-primary)]"
@@ -410,16 +531,17 @@ AI Strategic Rationale: ${item.ai_rationale}`;
             onChange={(e) => setSortBy(e.target.value as any)}
             className="h-8 px-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[12px] text-[var(--text-secondary)] focus:outline-none focus:border-[var(--brand-primary)] cursor-pointer"
           >
-            <option value="rank">Sort: Priority Rank</option>
+            <option value="rank">Sort: Need-Weighted Rank</option>
+            <option value="raw_rank">Sort: Raw Complaint Rank</option>
             <option value="urgency">Sort: Urgency (High to Low)</option>
-            <option value="population">Sort: Population Impact</option>
-            <option value="reports">Sort: Report Density</option>
+            <option value="population">Sort: Census 2011 Population</option>
+            <option value="reports">Sort: Raw Complaint Count</option>
           </select>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. PRIORITY DIRECTIVES DOSSIER LIST */}
+      {/* 4. PRIORITY DIRECTIVES DOSSIER LIST */}
       {/* ========================================================================= */}
       <div className="space-y-4">
         {filteredItems.length === 0 ? (
@@ -427,7 +549,7 @@ AI Strategic Rationale: ${item.ai_rationale}`;
             <ShieldAlert className="w-8 h-8 text-[var(--text-tertiary)] mx-auto mb-2" />
             <h4 className="text-[15px] font-semibold text-[var(--text-primary)]">No matching priority items</h4>
             <p className="text-[13px] text-[var(--text-secondary)] mt-1">
-              Try adjusting your sector filter, urgency threshold, or search keyword.
+              Try adjusting your sector filter or search keyword.
             </p>
           </div>
         ) : (
@@ -437,6 +559,8 @@ AI Strategic Rationale: ${item.ai_rationale}`;
             const isCopied = copiedRank === item.rank;
             const isTopRank = item.rank === 1;
             const colors = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+            const rawRank = item.raw_rank ?? item.rank;
+            const delta = item.rank_delta ?? rawRank - item.rank;
 
             return (
               <div
@@ -447,7 +571,6 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                     : "bg-[var(--bg-surface)] border-[var(--border-dim)] hover:border-[var(--border-base)]"
                 }`}
               >
-                {/* Top Rank Gold/Indigo Accent Strip */}
                 {isTopRank && (
                   <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[var(--brand-primary)] via-[var(--amber)] to-[var(--brand-secondary)]" />
                 )}
@@ -456,9 +579,8 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                 <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   {/* Left: Rank Badge + Category + District & State */}
                   <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                    {/* Rank Badge */}
                     <div
-                      className={`w-10 h-10 rounded-[var(--radius-md)] flex flex-col items-center justify-center shrink-0 font-mono font-bold shadow-xs ${
+                      className={`w-12 h-12 rounded-[var(--radius-md)] flex flex-col items-center justify-center shrink-0 font-mono font-bold shadow-xs ${
                         isTopRank
                           ? "bg-gradient-to-b from-[var(--brand-primary)] to-[var(--brand-secondary)] text-white ring-2 ring-[var(--brand-primary)]/30"
                           : item.rank <= 3
@@ -466,11 +588,10 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                           : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-dim)]"
                       }`}
                     >
-                      <span className="text-[9px] uppercase tracking-tighter opacity-80">Rank</span>
+                      <span className="text-[9px] uppercase tracking-tighter opacity-80">Need</span>
                       <span className="text-[15px] leading-none">#{item.rank}</span>
                     </div>
 
-                    {/* Sector badge & district name */}
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
@@ -484,39 +605,54 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                           {item.category}
                         </span>
 
-                        {isTopRank && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[rgba(245,158,11,0.15)] border border-[rgba(245,158,11,0.3)] text-[10px] font-bold text-[var(--amber)] uppercase tracking-wider">
-                            <Sparkles className="w-3 h-3" />
-                            Highest Priority Node
+                        <span className="text-[16px] sm:text-[17px] font-bold text-[var(--text-primary)] tracking-tight truncate">
+                          {item.project_title || `${item.district} — ${item.category}`}
+                        </span>
+
+                        {item.aspirational_district && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-bold text-amber-300 uppercase">
+                            NITI Aayog Aspirational District
                           </span>
                         )}
-
-                        <span className="text-[16px] sm:text-[17px] font-bold text-[var(--text-primary)] tracking-tight truncate">
-                          {item.district}
-                        </span>
                       </div>
 
                       <div className="flex items-center gap-3 text-[12px] text-[var(--text-secondary)] flex-wrap">
-                        <span>{item.state}</span>
-                        <span>•</span>
-                        <span className="font-mono text-[var(--text-primary)] font-semibold">
-                          {item.count} citizen grievance reports
+                        <span>
+                          {item.district}, {item.state}
                         </span>
                         <span>•</span>
-                        <span className="text-[var(--text-tertiary)]">
-                          Estimated ~{item.estimated_population_affected.toLocaleString()} residents affected
+                        <span className="font-mono text-[var(--text-primary)] font-semibold">
+                          {item.count} complaints (Raw #{rawRank} → Need #{item.rank}
+                          {delta > 0 ? ` ▲+${delta}` : delta < 0 ? ` ▼${delta}` : ""})
+                        </span>
+                        <span>•</span>
+                        <span className="text-[var(--text-tertiary)] font-mono">
+                          Census 2011 Pop:{" "}
+                          {item.population_2011 !== null && item.population_2011 !== undefined
+                            ? item.population_2011.toLocaleString()
+                            : "insufficient data"}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right: Urgency Bar + Action CTA */}
+                  {/* Right: Need Score + Urgency Bar + Action CTA */}
                   <div className="flex items-center gap-4 shrink-0 justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-[var(--border-dim)]">
-                    {/* Urgency Gauge */}
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-3">
                       <div className="text-right">
                         <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-tertiary)]">
-                          Urgency Score
+                          Need Score
+                        </div>
+                        <div className="text-[15px] font-mono font-bold text-[var(--brand-secondary)]">
+                          {item.need_weighted_score !== undefined
+                            ? item.need_weighted_score.toFixed(2)
+                            : "N/A"}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-tertiary)]">
+                          Urgency
                         </div>
                         <div
                           className={`text-[15px] font-mono font-bold ${
@@ -530,21 +666,8 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                           {item.avg_urgency.toFixed(1)} <span className="text-[11px] text-[var(--text-tertiary)] font-normal">/ 5</span>
                         </div>
                       </div>
-
-                      {/* Progress meter */}
-                      <div className="w-16 h-2 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-dim)] overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${(item.avg_urgency / 5) * 100}%`,
-                            backgroundColor:
-                              item.avg_urgency >= 4.0 ? "var(--red)" : item.avg_urgency >= 3.0 ? "var(--amber)" : "var(--green)",
-                          }}
-                        />
-                      </div>
                     </div>
 
-                    {/* Expand/Collapse Chevron Button */}
                     <button
                       type="button"
                       onClick={() => toggleExpand(item.rank)}
@@ -561,22 +684,22 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                 {isExpanded && (
                   <div className="p-4 sm:p-5 pt-2 bg-[var(--bg-subtle)] border-t border-[var(--border-dim)] space-y-4 animate-in fade-in duration-200">
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                      {/* Left: AI Rationale & Recommended Action (8 cols) */}
+                      {/* Left: Evidence, Rationale & Recommended Action (8 cols) */}
                       <div className="lg:col-span-8 space-y-3.5">
                         <div>
                           <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold tracking-wider text-[var(--brand-secondary)] mb-1">
                             <Sparkles className="w-3.5 h-3.5" />
-                            <span>Gemini Strategic Rationale & Root-Cause Synthesis</span>
+                            <span>Data-Joined Evidence &amp; Rationale ({item.engine || engineMode})</span>
                           </div>
                           <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-surface)] p-3 rounded-[var(--radius-md)] border border-[var(--border-dim)]">
-                            {item.ai_rationale}
+                            {item.evidence || item.ai_rationale}
                           </p>
                         </div>
 
                         <div>
                           <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold tracking-wider text-[var(--green)] mb-1">
                             <Clock className="w-3.5 h-3.5" />
-                            <span>Prescribed 14-Day Municipal Action Directive</span>
+                            <span>Prescribed Action Directive</span>
                           </div>
                           <div className="text-[13px] font-medium text-[var(--text-primary)] leading-relaxed bg-[rgba(34,197,94,0.06)] p-3 rounded-[var(--radius-md)] border border-[rgba(34,197,94,0.2)] flex items-start gap-2.5">
                             <Building2 className="w-4 h-4 text-[var(--green)] shrink-0 mt-0.5" />
@@ -596,27 +719,45 @@ AI Strategic Rationale: ${item.ai_rationale}`;
                       <div className="lg:col-span-4 p-4 rounded-[var(--radius-md)] bg-[var(--bg-surface)] border border-[var(--border-base)] space-y-3 flex flex-col justify-between">
                         <div className="space-y-2.5">
                           <div className="text-[11px] uppercase font-bold tracking-wider text-[var(--text-tertiary)]">
-                            Executive Directive Telemetry
+                            Verified District Telemetry
                           </div>
 
                           <div className="flex items-center justify-between text-[12px] py-1 border-b border-[var(--border-dim)]">
-                            <span className="text-[var(--text-secondary)]">Demographic Impact</span>
+                            <span className="text-[var(--text-secondary)]">Census 2011 Population</span>
                             <span className="font-mono font-semibold text-[var(--text-primary)]">
-                              ~{item.estimated_population_affected.toLocaleString()} citizens
+                              {item.population_2011 !== null && item.population_2011 !== undefined
+                                ? item.population_2011.toLocaleString()
+                                : "insufficient data"}
                             </span>
                           </div>
 
                           <div className="flex items-center justify-between text-[12px] py-1 border-b border-[var(--border-dim)]">
-                            <span className="text-[var(--text-secondary)]">SLA Resolution Window</span>
-                            <span className="font-mono font-semibold text-[var(--amber)]">
-                              14-Day Priority
+                            <span className="text-[var(--text-secondary)]">Census 2011 Literacy</span>
+                            <span className="font-mono font-semibold text-[var(--text-primary)]">
+                              {item.literacy_rate_2011 !== null && item.literacy_rate_2011 !== undefined
+                                ? `${item.literacy_rate_2011}%`
+                                : "insufficient data"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[12px] py-1 border-b border-[var(--border-dim)]">
+                            <span className="text-[var(--text-secondary)]">Relevant Public Scheme</span>
+                            <span className="font-semibold text-[var(--brand-secondary)] text-right">
+                              {item.relevant_scheme || "None (Municipal)"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[12px] py-1 border-b border-[var(--border-dim)]">
+                            <span className="text-[var(--text-secondary)]">Owning Department</span>
+                            <span className="font-medium text-[var(--text-primary)] text-right">
+                              {item.owning_department || "District Administration"}
                             </span>
                           </div>
 
                           <div className="flex items-center justify-between text-[12px] py-1">
-                            <span className="text-[var(--text-secondary)]">Confidence Rating</span>
+                            <span className="text-[var(--text-secondary)]">Data Confidence</span>
                             <span className="font-mono font-semibold text-[var(--green)]">
-                              98.4% (Gemini Verified)
+                              {item.confidence || "insufficient_data"} ({item.engine || engineMode})
                             </span>
                           </div>
                         </div>

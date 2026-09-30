@@ -8,6 +8,7 @@ import { Map as MapIcon, Layers, Info } from "lucide-react";
 import { Submission } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
+import { isDemoMode } from "@/lib/appMode";
 
 interface DemandHeatmapProps {
   submissions?: Submission[];
@@ -134,6 +135,10 @@ export default function DemandHeatmap({
   const hasMapsKey = Boolean(mapsKey && mapsKey.length > 10);
 
   useEffect(() => {
+    if (isDemoMode()) {
+      setRealtimeSubmissions(initialSubmissions);
+      return;
+    }
     let unsubscribe = () => {};
     try {
       const q = collection(db, "submissions");

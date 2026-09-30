@@ -7,6 +7,7 @@ import PriorityPanel from "@/components/dashboard/PriorityPanel";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { buildStatusHistoryEntry, appendStatusHistory } from "@/lib/audit";
+import { isDemoMode } from "@/lib/appMode";
 import {
   Search,
   CheckCircle2,
@@ -120,15 +121,16 @@ export default function DashboardPage({
 
     const loadSubmissions = async () => {
       try {
+        const endpoint = isDemoMode() ? "/api/demo/submissions" : "/api/admin/submissions?limit=100";
         const token = sessionStorage.getItem("nv_dashboard_token");
-        const response = await fetch("/api/admin/submissions?limit=100", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        const response = await fetch(endpoint, {
+          headers: !isDemoMode() && token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!response.ok) throw new Error("Submission query failed");
         const payload = await response.json();
         const data: Submission[] = (payload.submissions || []).map((d: any) => ({
-          id: d.id || (d.firestoreId.startsWith("NV-") ? d.firestoreId : `NV-${d.firestoreId.slice(0, 6).toUpperCase()}`),
-          firestoreId: d.firestoreId,
+          id: d.id || (d.firestoreId && String(d.firestoreId).startsWith("NV-") ? d.firestoreId : `NV-${String(d.firestoreId || "000000").slice(0, 6).toUpperCase()}`),
+          firestoreId: d.firestoreId || d.id,
           text: d.text || "",
           language: d.language || "English",
           category: (d.category as ComplaintCategory) || "roads",
@@ -198,6 +200,11 @@ export default function DashboardPage({
     setToastMessage(`Updated to: ${statusDisplayMap[newStatus] || newStatus}`);
     setTimeout(() => setToastMessage(null), 3000);
 
+    // Read-only in demo mode: do not call /api/admin endpoints
+    if (isDemoMode()) {
+      return;
+    }
+
     // Update Firestore document status field
     try {
       const docId = row.firestoreId || (row.id && !row.id.startsWith("seed-") ? row.id : null);
@@ -242,6 +249,11 @@ export default function DashboardPage({
   const handleRetryClassification = async (row: Submission, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setOpenActionRowId(null);
+    if (isDemoMode()) {
+      setToastMessage("Read-only in demo sandbox mode.");
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
     const docId = row.firestoreId || row.id;
     if (!docId) return;
     try {
@@ -298,7 +310,10 @@ export default function DashboardPage({
     setToastMessage(`Updated ${count} reports to: ${statusDisplayMap[newStatus] || newStatus}`);
     setTimeout(() => setToastMessage(null), 3000);
 
-    // 2. Update Firestore documents
+    // 2. Update Firestore documents (skip in demo mode)
+    if (isDemoMode()) {
+      return;
+    }
     try {
       const selectedSubs = submissions.filter((s) => idsToUpdate.includes(s.id || ""));
       const promises = selectedSubs.map((sub) => {
@@ -331,6 +346,11 @@ export default function DashboardPage({
 
   // Seed demo data handler
   const handleSeedDemoData = async () => {
+    if (isDemoMode()) {
+      setToastMessage("Demo sandbox already includes 60 pre-seeded records.");
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
     try {
       setToastMessage("Seeding BRICS demo records to Firestore...");
       const token = sessionStorage.getItem("nv_dashboard_token");
@@ -567,6 +587,23 @@ export default function DashboardPage({
             </div>
           </div>
 
+          {/* DEMO DATA BANNER */}
+          {submissions.some((s) => s.synthetic) && (
+            <div className="mx-4 mt-3 p-3 rounded-[var(--radius-sm)] bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-200 text-[12px] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-100 text-[10px] font-bold uppercase tracking-wider">
+                  Demo data
+                </span>
+                <span>
+                  Records marked with the <strong>Demo</strong> tag are synthetic demonstration grievances illustrating multilingual intake across 20+ Indian states and NITI Aayog aspirational districts.
+                </span>
+              </div>
+              <span className="text-[11px] font-mono opacity-80 shrink-0">
+                {submissions.filter((s) => s.synthetic).length} synthetic records
+              </span>
+            </div>
+          )}
+
           {/* PART 2 — BULK ACTIONS FLOATING TOOLBAR */}
           {selectedRowIds.length > 0 && (
             <div className="mx-4 mt-3 mb-1 p-2.5 px-4 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--brand-primary)]/40 flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-1 duration-150">
@@ -741,7 +778,14 @@ export default function DashboardPage({
 
                         {/* ID: 95px mono */}
                         <td className="py-2 px-3 font-mono text-[12px] font-semibold text-[var(--brand-secondary)] w-[95px] truncate">
-                          {row.id}
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span>{row.id}</span>
+                            {row.synthetic && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20">
+                                Demo
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Category: 110px */}
@@ -911,35 +955,82 @@ export default function DashboardPage({
           </div>
 
           {selectedSubmission && (
-            <section className="border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] p-4" aria-label="Complaint audit history">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <section className="border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] p-5 space-y-4" aria-label="Complaint telemetry and detail">
+              {/* Header with Title and Demo Tag */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[var(--border-dim)]">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Complaint audit history</p>
-                  <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">{selectedSubmission.id}</h3>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] font-bold">Complaint Telemetry & Detail</p>
+                    {selectedSubmission.synthetic && (
+                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-bold uppercase tracking-wider border border-amber-500/30">
+                        Demo Data (Synthetic)
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-[16px] font-bold text-[var(--text-primary)] font-mono mt-0.5">{selectedSubmission.id}</h3>
                 </div>
-                <span className="text-[12px] text-[var(--text-secondary)]">
-                  {selectedSubmission.status_history?.length || 0} recorded transition{selectedSubmission.status_history?.length === 1 ? "" : "s"}
-                </span>
+                <div className="flex items-center gap-3 text-[12px] text-[var(--text-secondary)]">
+                  <span className="font-medium text-[var(--text-primary)]">{selectedSubmission.district}, {selectedSubmission.state} ({selectedSubmission.country})</span>
+                  <span>•</span>
+                  <span>{selectedSubmission.status_history?.length || 0} recorded transition{selectedSubmission.status_history?.length === 1 ? "" : "s"}</span>
+                </div>
               </div>
 
-              {selectedSubmission.status_history && selectedSubmission.status_history.length > 0 ? (
-                <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {selectedSubmission.status_history.map((entry, index) => (
-                    <li key={`${entry.timestamp}-${index}`} className="rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] p-3">
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--text-tertiary)]">
-                        <time dateTime={entry.timestamp}>{formatRelativeTime(entry.timestamp)}</time>
-                        <span className="uppercase tracking-[0.06em]">{entry.changedBy}</span>
-                      </div>
-                      <p className="mt-2 text-[13px] font-medium text-[var(--text-primary)]">
-                        {entry.previousStatus} <span className="text-[var(--text-tertiary)]">to</span> {entry.newStatus}
-                      </p>
-                      {entry.note && <p className="mt-1 text-[12px] text-[var(--text-secondary)]">{entry.note}</p>}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="mt-3 text-[12px] text-[var(--text-secondary)]">No status transitions have been recorded for this complaint.</p>
-              )}
+              {/* Multilingual Complaint Text View (Both Original and English Translation) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Original Text */}
+                <div className="p-3.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--brand-primary)]">
+                      Original Citizen Voice / Text
+                    </span>
+                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] bg-[var(--bg-subtle)] px-2 py-0.5 rounded border border-[var(--border-dim)]">
+                      {selectedSubmission.detected_language || selectedSubmission.language || "Native"}
+                    </span>
+                  </div>
+                  <p className="text-[14px] text-[var(--text-primary)] leading-relaxed font-medium">
+                    "{selectedSubmission.original_text || selectedSubmission.text}"
+                  </p>
+                </div>
+
+                {/* English Translation */}
+                <div className="p-3.5 rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-emerald-600 dark:text-emerald-400">
+                      Standardized English Translation
+                    </span>
+                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] bg-[var(--bg-subtle)] px-2 py-0.5 rounded border border-[var(--border-dim)]">
+                      English
+                    </span>
+                  </div>
+                  <p className="text-[14px] text-[var(--text-primary)] leading-relaxed">
+                    "{selectedSubmission.english_translation || selectedSubmission.summary_english || selectedSubmission.text}"
+                  </p>
+                </div>
+              </div>
+
+              {/* Status History Transitions */}
+              <div className="pt-2">
+                <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] font-bold mb-2">Resolution Lifecycle Audit</p>
+                {selectedSubmission.status_history && selectedSubmission.status_history.length > 0 ? (
+                  <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {selectedSubmission.status_history.map((entry, index) => (
+                      <li key={`${entry.timestamp}-${index}`} className="rounded-[var(--radius-sm)] border border-[var(--border-dim)] bg-[var(--bg-surface)] p-3">
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--text-tertiary)]">
+                          <time dateTime={entry.timestamp}>{formatRelativeTime(entry.timestamp)}</time>
+                          <span className="uppercase tracking-[0.06em]">{entry.changedBy}</span>
+                        </div>
+                        <p className="mt-2 text-[13px] font-medium text-[var(--text-primary)]">
+                          {entry.previousStatus} <span className="text-[var(--text-tertiary)]">to</span> {entry.newStatus}
+                        </p>
+                        {entry.note && <p className="mt-1 text-[12px] text-[var(--text-secondary)]">{entry.note}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-[12px] text-[var(--text-secondary)]">No status transitions have been recorded for this complaint.</p>
+                )}
+              </div>
             </section>
           )}
 

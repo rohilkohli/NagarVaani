@@ -32,6 +32,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 import CommunityMapExplorer from "@/components/citizen/CommunityMapExplorer";
+import { isDemoMode } from "@/lib/appMode";
 
 interface CommunityTabProps {
   currentCountry?: string;
@@ -107,10 +108,34 @@ export default function CommunityTab({
     }
   }, [currentCountry]);
 
-  // Real-time Firestore Listener
+  // Real-time Firestore Listener (or demo sandbox fetch)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
+
+    if (isDemoMode()) {
+      fetch("/api/demo/submissions")
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((payload) => {
+          if (!isMounted) return;
+          const list = Array.isArray(payload.submissions) ? payload.submissions : ALL_SEED_SUBMISSIONS;
+          setSubmissions(
+            list.map((d: any) => ({
+              ...d,
+              created_at: d.created_at ? new Date(d.created_at) : new Date(),
+            }))
+          );
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          setSubmissions(ALL_SEED_SUBMISSIONS);
+          setIsLoading(false);
+        });
+      return () => {
+        isMounted = false;
+      };
+    }
 
     try {
       const colRef = collection(db, "submissions");
@@ -207,7 +232,7 @@ export default function CommunityTab({
       })
     );
 
-    if (submission.firestoreId) {
+    if (submission.firestoreId && !isDemoMode()) {
       try {
         const response = await fetch(`/api/submissions/${encodeURIComponent(submission.firestoreId)}/upvote`, {
           method: incrementDelta > 0 ? "POST" : "DELETE",

@@ -55,7 +55,7 @@ export default function Header({
   const tabTitles: Record<string, string> = {
     overview: t("overview", "Executive Overview"),
     heatmap: t("demandHeatmap", "Demand Heatmap"),
-    brics: t("bricsComparison", "BRICS Comparative View"),
+    brics: t("bricsComparison", "Beyond India (BRICS Extension)"),
     reports: t("allSubmissions", "All Reports"),
     settings: t("settings", "System Settings"),
     priority: t("priorityInterventions", "AI Priorities"),

@@ -1,0 +1,28 @@
+# ==============================================================================
+# ILLUSTRATIVE SAMPLE — DO NOT USE AS OFFICIAL STATISTICS
+# ==============================================================================
+# Population (2011), Literacy (2011), and NITI Aayog Aspirational District flags
+# below are real published figures. The last three columns
+# (tap_water_coverage_pct, pmgsy_road_connectivity_pct, sanitation_coverage_pct)
+# in this .SAMPLE file are ILLUSTRATIVE ONLY to demonstrate schema formatting.
+# See data/SOURCES.md ("MISSING - Fill Manually") for instructions on filling
+# data/districts.csv from ejalshakti.gov.in, omms.nic.in, and rchiips.org/nfhs.
+# ==============================================================================
+state,district,population_2011,literacy_rate_2011,aspirational_district,tap_water_coverage_pct,pmgsy_road_connectivity_pct,sanitation_coverage_pct
+Bihar,Patna,5838465,70.68,false,,,
+Bihar,Gaya,4359700,63.67,true,,,
+Bihar,Muzaffarpur,4801062,63.56,true,,,
+Rajasthan,Jaipur,6626178,75.51,false,,,
+Madhya Pradesh,Bhopal,2368145,80.40,false,,,
+Uttar Pradesh,Lucknow,4589838,77.29,false,,,
+Uttar Pradesh,Varanasi,3676841,75.60,false,,,
+Uttar Pradesh,Bahraich,3487731,49.32,true,,,
+West Bengal,Kolkata,4496694,86.31,false,,,
+Maharashtra,Mumbai Suburban,9356962,89.91,false,,,
+Maharashtra,Pune,9429408,86.15,false,,,
+Tamil Nadu,Chennai,4646732,90.18,false,,,
+Telangana,Hyderabad,3943323,83.25,false,,,
+Gujarat,Ahmedabad,7214225,85.31,false,,,
+Jharkhand,Ranchi,2914253,76.06,true,,,
+Odisha,Koraput,1379647,49.21,true,,,
+Chhattisgarh,Bastar,834375,53.15,true,,,

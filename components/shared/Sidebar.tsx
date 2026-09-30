@@ -39,7 +39,7 @@ export default function Sidebar({
     { id: "heatmap", label: t("demandHeatmap", "Heatmap"), icon: Map },
     { id: "priority", label: t("priorityInterventions", "AI Priorities"), icon: Sparkles },
     { id: "departments", label: t("departments", "Departments"), icon: Building2 },
-    { id: "brics", label: t("bricsComparison", "BRICS View"), icon: Globe2 },
+    { id: "brics", label: t("bricsComparison", "Beyond India (BRICS)"), icon: Globe2 },
     { id: "reports", label: t("allSubmissions", "All Reports"), icon: FileText },
     { id: "settings", label: t("settings", "Settings"), icon: Settings },
   ];

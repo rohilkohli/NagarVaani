@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Loader2, CheckCircle2, Globe, AlertCircle, RotateCcw } from "lucide-react";
+import { Mic, Loader2, CheckCircle2, Globe, AlertCircle, RotateCcw, Edit3, Check } from "lucide-react";
 
 export interface VoiceInputProps {
-  onTranscribe: (text: string, language: string) => void;
+  onTranscribe: (text: string, language: string, originalText?: string) => void;
   disabled?: boolean;
   className?: string;
 }
@@ -21,6 +21,9 @@ export default function VoiceInput({
   const [originalText, setOriginalText] = useState<string>("");
   const [englishTranslation, setEnglishTranslation] = useState<string>("");
   const [languageDetected, setLanguageDetected] = useState<string>("");
+  const [editableTranscript, setEditableTranscript] = useState<string>("");
+  const [editableLanguage, setEditableLanguage] = useState<string>("");
+  const [isConfirmed, setIsConfirmed] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -94,7 +97,6 @@ export default function VoiceInput({
 
         for (let i = 0; i < numBars; i++) {
           const val = dataArray[i * step] || 0;
-          // Scale 0-255 to 4px - 40px
           const dynamicHeight = Math.min(40, Math.max(4, Math.round((val / 255) * 36 + 4)));
           newBars.push(dynamicHeight);
         }
@@ -113,6 +115,7 @@ export default function VoiceInput({
     if (disabled) return;
     setErrorMessage(null);
     audioChunksRef.current = [];
+    setIsConfirmed(false);
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -210,15 +213,20 @@ export default function VoiceInput({
       setOriginalText(transOrig);
       setEnglishTranslation(transEnglish);
       setLanguageDetected(detectedLang);
+      setEditableTranscript(transEnglish || transOrig);
+      setEditableLanguage(detectedLang);
+      setIsConfirmed(false);
       setRecordState("done");
-
-      if (transEnglish) {
-        onTranscribe(transEnglish, detectedLang);
-      }
     } catch (err: any) {
       setErrorMessage(err.message || "Unable to transcribe audio. You can type below instead.");
       setRecordState("idle");
     }
+  };
+
+  const handleConfirmTranscript = () => {
+    if (!editableTranscript.trim()) return;
+    setIsConfirmed(true);
+    onTranscribe(editableTranscript.trim(), editableLanguage.trim() || languageDetected, originalText);
   };
 
   const handleReset = () => {
@@ -227,6 +235,9 @@ export default function VoiceInput({
     setOriginalText("");
     setEnglishTranslation("");
     setLanguageDetected("");
+    setEditableTranscript("");
+    setEditableLanguage("");
+    setIsConfirmed(false);
   };
 
   return (
@@ -247,10 +258,10 @@ export default function VoiceInput({
             </button>
             <div className="space-y-0.5">
               <span className="text-[14px] font-semibold text-[var(--text-primary)] block">
-                Tap to speak in any language
+                Tap to speak in any Indian language
               </span>
               <span className="text-[12px] text-[var(--text-secondary)] block">
-                Hindi, Tamil, Marathi, Russian, Portuguese, etc.
+                Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia, English
               </span>
             </div>
           </div>
@@ -272,7 +283,7 @@ export default function VoiceInput({
                 Listening... Tap when finished
               </span>
               <span className="text-[12px] text-[var(--text-secondary)] block">
-                AI transcribes and summarizes automatically
+                Gemini Voice AI transcribes and identifies your language
               </span>
             </div>
           </div>
@@ -280,13 +291,11 @@ export default function VoiceInput({
 
         {recordState === "processing" && (
           <div className="flex flex-col items-center text-center space-y-2 py-2">
-            <div
-              className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white select-none bg-[#6366f1] shadow-lg shadow-[#6366f1]/25"
-            >
+            <div className="w-[80px] h-[80px] rounded-full flex items-center justify-center text-white select-none bg-[#6366f1] shadow-lg shadow-[#6366f1]/25">
               <Loader2 className="w-8 h-8 text-white animate-spin" />
             </div>
             <span className="text-[13px] font-medium text-[#6366f1]">
-              Transcribing with Gemini Voice AI...
+              Transcribing & detecting language with Gemini AI...
             </span>
           </div>
         )}
@@ -336,28 +345,86 @@ export default function VoiceInput({
         </div>
       )}
 
-      {/* TRANSCRIPTION RESULT BOX */}
-      {(englishTranslation || originalText) && (
-        <div className="rounded-[10px] space-y-1.5 p-3.5 bg-[var(--brand-subtle)] border border-[var(--brand-primary)]/20 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[#6366f1] bg-[var(--bg-surface)] px-2 py-0.5 rounded-[4px] border border-[var(--border-dim)]">
-              <Globe className="w-3 h-3" />
-              {languageDetected || "Detected Language"}
-            </span>
-            <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-              ✓ Populated in form
-            </span>
+      {/* TRANSCRIPTION CONFIRMATION & EDIT PANEL */}
+      {recordState === "done" && editableTranscript && (
+        <div className="rounded-[12px] p-4 bg-[var(--bg-surface)] border border-[var(--brand-primary)]/30 space-y-3 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-[var(--border-dim)] pb-2.5">
+            <div className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-[#6366f1]" />
+              <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                Confirm or Edit Voice Transcript
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-[var(--text-tertiary)]">Detected Language:</span>
+              <div className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[#6366f1] bg-[var(--brand-subtle)] px-2 py-0.5 rounded-[4px] border border-[var(--brand-primary)]/20">
+                <Globe className="w-3 h-3" />
+                <input
+                  type="text"
+                  value={editableLanguage}
+                  onChange={(e) => setEditableLanguage(e.target.value)}
+                  className="bg-transparent text-[#6366f1] font-bold text-[11px] w-20 outline-none"
+                  title="Edit detected language"
+                />
+              </div>
+            </div>
           </div>
 
-          <p className="text-[14px] text-[var(--text-primary)] font-medium leading-relaxed">
-            "{englishTranslation || originalText}"
-          </p>
-
+          {/* Original Non-English Speech (if distinct) */}
           {originalText && originalText !== englishTranslation && (
-            <p className="text-[12px] text-[var(--text-secondary)] italic leading-relaxed pt-1 border-t border-[var(--brand-primary)]/15">
-              Original: "{originalText}"
-            </p>
+            <div className="bg-[var(--bg-elevated)] p-2.5 rounded-[8px] border border-[var(--border-dim)]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-tertiary)] block">
+                Original Spoken Voice:
+              </span>
+              <p className="text-[12px] text-[var(--text-secondary)] italic mt-0.5">
+                "{originalText}"
+              </p>
+            </div>
           )}
+
+          {/* Editable English Transcript */}
+          <div>
+            <label className="text-[11px] font-semibold text-[var(--text-secondary)] block mb-1">
+              English Transcript (Citizen can edit before confirming):
+            </label>
+            <textarea
+              rows={3}
+              value={editableTranscript}
+              onChange={(e) => {
+                setEditableTranscript(e.target.value);
+                setIsConfirmed(false);
+              }}
+              className="w-full text-[13px] p-2.5 rounded-[8px] bg-[var(--bg-elevated)] border border-[var(--border-base)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40"
+              placeholder="Confirm or edit the transcribed text here..."
+            />
+          </div>
+
+          {/* Action Row */}
+          <div className="flex items-center justify-between pt-1">
+            {isConfirmed ? (
+              <span className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                <Check className="w-4 h-4" />
+                Transcript confirmed & populated into form!
+              </span>
+            ) : (
+              <span className="text-[11px] text-[var(--text-tertiary)]">
+                Please verify the transcription above before proceeding.
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleConfirmTranscript}
+              className={`h-9 px-4 rounded-[8px] text-[12px] font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                isConfirmed
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-[#6366f1] text-white hover:bg-[#4f46e5] shadow-md shadow-[#6366f1]/25"
+              }`}
+            >
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <span>{isConfirmed ? "Update in Form" : "Confirm & Use Transcript"}</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
