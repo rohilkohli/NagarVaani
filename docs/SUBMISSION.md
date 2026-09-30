@@ -4,7 +4,7 @@
 **Track:** 01, AI for Digital Public Infrastructure & Governance
 **Live demo:** https://nagarvaani-636001394004.asia-south1.run.app
 **Repository:** https://github.com/rohilkohli/NagarVaani
-**Demo video:** _add link_ | **Deck:** [NagarVaani-pitch-deck.pptx](NagarVaani-pitch-deck.pptx) (replace the product-tour frames on slide 8 with screenshots)
+**Demo video:** _add link_ | **Deck:** [NagarVaani-pitch-deck.pptx](NagarVaani-pitch-deck.pptx) (real screenshots included on slides 7 to 9)
 
 ## Checklist (official requirements)
 
@@ -31,8 +31,8 @@ Use `docs/brand/png/nagarvaani-logo-dark-tagline.png` on slide 1 and the icon on
 4. **How it works.** Architecture diagram (README mermaid): intake, PII redaction, Gemini, storage, data join, scoring, recommendations, dashboard.
 5. **AI approach.** Gemini transcription (with user confirmation), classification with schema-validated JSON, translation, urgency 1 to 5, duplicate detection, recommendations grounded in the data table; fallbacks tagged `rule-based`.
 6. **Data.** Census 2011, NITI Aayog aspirational flag, NFHS-5 household indicators; provenance in `data/SOURCES.md`; coverage stated honestly (NFHS-5 for 30 of 58 districts).
-7. **Need-weighted ranking.** Formula and one before/after example from the dashboard: raw rank versus need rank.
-8. **Product tour.** Screenshots: citizen portal, Hindi voice complaint, tracker, heatmap, priority view.
+7. **Need-weighted ranking.** Screenshot of the Priority Interventions view plus the formula. State honestly that every demo cluster has one complaint, so raw rank is a tie-break.
+8. **Product tour.** Screenshots: citizen report form, tracking reference, demand heatmap, department SLA centre.
 9. **Reach across India.** 10 Indian languages plus English; state and district coverage; extensible to BRICS.
 10. **Deployability and safety.** Cloud Run container, demo and live modes, CI, 39 unit tests plus Playwright smoke; PII redaction, signed WhatsApp webhook, roles, audit logs, rate limits.
 11. **Impact and roadmap.** Pilot path with a ministry or state department; complete data coverage; live-mode pilot; DPDP Act review; real-complaint evaluation.

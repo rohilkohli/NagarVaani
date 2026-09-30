@@ -46,6 +46,22 @@ infrastructure. Citizens speak dozens of languages and use voice and messaging a
    and "insufficient data" instead of guesses. A deterministic builder is the fallback, tagged `rule-based`.
 6. **Shows it** on a demand heatmap (Google Maps + deck.gl), priority rankings, department views and a citizen-facing tracker.
 
+## Screenshots
+
+Captured from the live demo (synthetic data).
+
+| Citizen report | Tracking reference |
+|---|---|
+| <img src="docs/screenshots/citizen-report-form.png" width="260" alt="Citizen report form"> | <img src="docs/screenshots/citizen-report-submitted.png" width="260" alt="Report submitted with tracking reference"> |
+
+| Demand heatmap | Priority interventions |
+|---|---|
+| <img src="docs/screenshots/dashboard-heatmap.png" alt="Demand heatmap"> | <img src="docs/screenshots/priority-interventions.png" alt="Raw rank versus need-weighted rank"> |
+
+| Department SLA centre | Beyond India (BRICS extension) |
+|---|---|
+| <img src="docs/screenshots/department-sla.png" alt="Department SLA centre"> | <img src="docs/screenshots/beyond-india-brics.png" alt="BRICS extension"> |
+
 ## Architecture
 
 ```mermaid
