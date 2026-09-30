@@ -153,7 +153,7 @@ if (IS_DEMO) {
 }
 
 async function startServer() {
-  void initializeGeminiModel().catch((error) => console.warn("Gemini model init failed:", error)); git
+  void initializeGeminiModel().catch((error) => console.warn("Gemini model init failed:", error));
   const app = express();
   app.set("trust proxy", 1);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
