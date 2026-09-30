@@ -1268,7 +1268,7 @@ Return JSON strictly in this format:
           step: 2,
           title: "AI Classification",
           status: "complete",
-          description: "Gemini 3.7 Flash AI classified and translated your complaint",
+          description: "Gemini AI classified and translated your complaint",
           category: sampleSubmission.category,
           urgency: sampleSubmission.urgency,
           summary: sampleSubmission.summary_english,

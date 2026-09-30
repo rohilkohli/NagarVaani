@@ -638,7 +638,7 @@ export default function TrackComplaint({
 
         {/* RESTRAINED FOOTER NOTE */}
         <p className="text-center text-[12px] text-[var(--text-tertiary)] pt-2">
-          NagarVaani Grievance Redressal Network • Powered by Gemini 3.7 Flash
+          NagarVaani Grievance Redressal Network • Powered by Google Gemini
         </p>
 
       </div>
