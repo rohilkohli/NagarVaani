@@ -131,10 +131,10 @@ Google Maps features (HeatmapLayer demand visualizer and Citizen GIS pinpoint ma
 1. **Create the Key**: In Google Cloud Console -> **APIs & Services** -> **Credentials**, create an API key and enable **Maps JavaScript API**.
 2. **Set HTTP Referrer Restrictions**:
    - Under **Application restrictions**, choose **Websites**.
-   - Add authorized referrers:
-     - `https://<your-service>-<hash>.a.run.app/*`
-     - `https://nagarvaani.com/*`
-     - `http://localhost:*/*` (for local testing)
+   - Add authorized referrers strictly to:
+     - `https://nagarvaani-636001394004.asia-south1.run.app/*`
+     - `http://localhost:3000/*`
+     - `http://localhost:5173/*`
    - *Client-Side Geocoding:* When HTTP referrer restrictions are active, direct REST calls to `maps.googleapis.com/maps/api/geocode/json` return `REQUEST_DENIED`. NagarVaani uses the client-side `google.maps.Geocoder` from the JS API, which inherits browser HTTP referrer authentication.
 3. **Inject at Runtime in Cloud Run**:
    Update your deployed Cloud Run service without rebuilding:

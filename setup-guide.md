@@ -258,7 +258,10 @@ META_APP_SECRET=demo-meta-secret npm exec tsx scripts/simulate-whatsapp.ts
 ### Google Maps runtime key & referrer restrictions
 
 1. In Google Cloud Console, enable **Maps JavaScript API**.
-2. Set website restrictions to `https://*.run.app/*`, `https://nagarvaani.com/*`, and `http://localhost:*/*`.
+2. Set website restrictions strictly to:
+   - `https://nagarvaani-636001394004.asia-south1.run.app/*`
+   - `http://localhost:3000/*`
+   - `http://localhost:5173/*`
 3. In Cloud Run, update the runtime environment variable:
    ```bash
    gcloud run services update nagarvaani --region asia-south1 --update-env-vars GOOGLE_MAPS_API_KEY=<key>

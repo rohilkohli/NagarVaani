@@ -181,6 +181,7 @@ async function startServer() {
   // Security headers
   app.use(
     helmet({
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
@@ -215,6 +216,7 @@ async function startServer() {
           fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
           workerSrc: ["'self'", "blob:"],
           frameSrc: ["'self'", "https://*.google.com"],
+          upgradeInsecureRequests: process.env.NODE_ENV !== "production" ? null : [],
         },
       },
     })
