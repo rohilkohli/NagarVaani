@@ -212,14 +212,8 @@ export default function StatsPanel({
   }, [allSubmissions, submissions, timeRange]);
 
   const calculateDelta = (current: number, previous: number) => {
-    if (timeRange === "all") {
-      return { text: "→ Stable", color: "text-[var(--text-tertiary)]" };
-    }
-    if (previous === 0) {
-      if (current === 0) {
-        return { text: "→ Stable", color: "text-[var(--text-tertiary)]" };
-      }
-      return { text: "↑ +100%", color: "text-[var(--green)]" };
+    if (timeRange === "all" || previousPeriodSubmissions.length === 0 || previous === 0) {
+      return null;
     }
     const diff = current - previous;
     const pct = Math.round((diff / previous) * 100);
@@ -245,18 +239,19 @@ export default function StatsPanel({
 
   const districtsTrend = useMemo(() => {
     return calculateDelta(uniqueDistricts, prevDistrictsCount);
-  }, [uniqueDistricts, prevDistrictsCount, timeRange]);
+  }, [uniqueDistricts, prevDistrictsCount, timeRange, previousPeriodSubmissions.length]);
 
   // 3. Avg urgency dynamic trend
   const prevAvgUrgency = useMemo(() => {
-    if (previousPeriodSubmissions.length === 0) return avgUrgency;
+    if (previousPeriodSubmissions.length === 0) return 0;
     const sum = previousPeriodSubmissions.reduce((acc, s) => acc + (Number(s.urgency) || 3), 0);
     return Number((sum / previousPeriodSubmissions.length).toFixed(1));
-  }, [previousPeriodSubmissions, avgUrgency]);
+  }, [previousPeriodSubmissions]);
 
   const urgencyTrend = useMemo(() => {
+    if (previousPeriodSubmissions.length === 0 || prevAvgUrgency === 0) return null;
     return calculateDelta(avgUrgency, prevAvgUrgency);
-  }, [avgUrgency, prevAvgUrgency, timeRange]);
+  }, [avgUrgency, prevAvgUrgency, timeRange, previousPeriodSubmissions.length]);
 
   // 4. Resolution rate dynamic trend
   const prevResolutionRate = useMemo(() => {
@@ -350,9 +345,11 @@ export default function StatsPanel({
                 </span>
               </div>
               {/* Dynamic Delta Trend Indicator */}
-              <span className={`text-[12px] font-medium font-mono ${totalReportsTrend.color} flex items-center gap-0.5`}>
-                <span>{totalReportsTrend.text}</span>
-              </span>
+              {totalReportsTrend && (
+                <span className={`text-[12px] font-medium font-mono ${totalReportsTrend.color} flex items-center gap-0.5`}>
+                  <span>{totalReportsTrend.text}</span>
+                </span>
+              )}
             </div>
 
             {/* Middle: Giant Number */}
@@ -389,9 +386,11 @@ export default function StatsPanel({
                 </span>
               </div>
               {/* Dynamic Delta Trend indicator */}
-              <span className={`text-[12px] font-medium font-mono ${districtsTrend.color}`}>
-                {districtsTrend.text}
-              </span>
+              {districtsTrend && (
+                <span className={`text-[12px] font-medium font-mono ${districtsTrend.color}`}>
+                  {districtsTrend.text}
+                </span>
+              )}
             </div>
 
             {/* Middle: Giant Number */}
@@ -428,9 +427,11 @@ export default function StatsPanel({
                 </span>
               </div>
               {/* Dynamic Delta Trend Indicator */}
-              <span className={`text-[12px] font-medium font-mono ${urgencyTrend.color}`}>
-                {urgencyTrend.text}
-              </span>
+              {urgencyTrend && (
+                <span className={`text-[12px] font-medium font-mono ${urgencyTrend.color}`}>
+                  {urgencyTrend.text}
+                </span>
+              )}
             </div>
 
             {/* Middle: Giant Number & Urgency Dots */}

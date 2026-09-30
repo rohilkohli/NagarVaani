@@ -496,7 +496,7 @@ export default function PriorityPanel({
                       </div>
                       {item.need_weighted_score !== undefined && (
                         <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                          Score {item.need_weighted_score.toFixed(2)}
+                          Score {item.need_weighted_score.toFixed(3)}
                         </div>
                       )}
                     </div>

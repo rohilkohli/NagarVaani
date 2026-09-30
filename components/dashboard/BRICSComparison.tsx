@@ -99,6 +99,14 @@ export default function BRICSComparison({
     return bestCat;
   }, [matrixData]);
 
+  const topSharedCount = useMemo(() => {
+    let count = 0;
+    BRICS_COUNTRIES.forEach((c) => {
+      count += matrixData[topSharedCategory.key]?.[c.name]?.count || 0;
+    });
+    return count;
+  }, [matrixData, topSharedCategory]);
+
   return (
     <div className={`space-y-6 select-none ${className}`} id="brics-comparison-root">
       {/* 1. HEADER SECTION */}
@@ -141,7 +149,7 @@ export default function BRICSComparison({
             ))}
           </div>
           <span className="text-[12px] text-[var(--text-secondary)] font-medium">
-            3.6 billion citizens represented
+            {allSubmissions.length} records across 5 nations (synthetic demo data)
           </span>
         </div>
       </div>
@@ -301,7 +309,7 @@ export default function BRICSComparison({
             {topSharedCategory.name}
           </h3>
           <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
-            Reported by all 5 BRICS nations — affecting an estimated 890M people
+            {topSharedCount} reports across all 5 BRICS nations (synthetic demo data)
           </p>
         </div>
 

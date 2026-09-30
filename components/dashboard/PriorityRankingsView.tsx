@@ -27,8 +27,13 @@ import {
   joinAndScoreClusters,
   buildDeterministicRecommendations,
   PRIORITY_FORMULA_TOOLTIP,
+  compareRawRank,
 } from "@/lib/priority";
 import { isDemoMode } from "@/lib/appMode";
+
+const formatNeedScore = (val: number | undefined | null): string => {
+  return val !== undefined && val !== null ? val.toFixed(3) : "N/A";
+};
 
 interface PriorityRankingsViewProps {
   submissions?: Submission[];
@@ -172,10 +177,27 @@ export default function PriorityRankingsView({
         if (sortBy === "raw_rank") return (a.raw_rank ?? a.rank) - (b.raw_rank ?? b.rank);
         if (sortBy === "urgency") return b.avg_urgency - a.avg_urgency;
         if (sortBy === "population") return (b.population_2011 ?? 0) - (a.population_2011 ?? 0);
-        if (sortBy === "reports") return b.count - a.count;
+        if (sortBy === "reports") return compareRawRank(a, b);
         return a.rank - b.rank;
       });
   }, [prioritizedData, selectedCategory, urgencyThreshold, searchQuery, sortBy]);
+
+  // Top need node: computed from identical source array as the table
+  const topNeedItem = useMemo(() => {
+    if (!prioritizedData || prioritizedData.length === 0) return null;
+    return [...prioritizedData].sort((a, b) => (b.need_weighted_score ?? 0) - (a.need_weighted_score ?? 0))[0];
+  }, [prioritizedData]);
+
+  // Check if multiple rows share equal raw complaint counts
+  const hasEqualRawCounts = useMemo(() => {
+    if (!prioritizedData || prioritizedData.length <= 1) return false;
+    const seen = new Set<number>();
+    for (const item of prioritizedData) {
+      if (seen.has(item.count)) return true;
+      seen.add(item.count);
+    }
+    return false;
+  }, [prioritizedData]);
 
   // Aggregate metrics from verified Census 2011 figures (never fabricated multipliers)
   const totalCensusPopulationJoined = useMemo(() => {
@@ -317,10 +339,10 @@ Recommended Action: ${item.recommended_action}`;
               <span>Top Need-Weighted Node</span>
             </div>
             <div className="text-[18px] sm:text-[20px] font-bold text-[var(--text-primary)] mt-1 truncate">
-              {prioritizedData[0]?.district || "N/A"}
+              {topNeedItem?.district || "N/A"}
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 capitalize">
-              {prioritizedData[0]?.category} • Score {prioritizedData[0]?.need_weighted_score?.toFixed(2) ?? "0.00"}
+              {topNeedItem?.category} • Score {formatNeedScore(topNeedItem?.need_weighted_score)}
             </div>
           </div>
 
@@ -335,7 +357,7 @@ Recommended Action: ${item.recommended_action}`;
                 : "insufficient data"}
             </div>
             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-              Verified Census 2011 PCA coverage
+              Census 2011 PCA coverage
             </div>
           </div>
 
@@ -385,6 +407,11 @@ Recommended Action: ${item.recommended_action}`;
             <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
               Demonstrates how joining Census 2011 population (complaints per 100k), literacy gap, and NITI Aayog Aspirational District flags re-orders priorities compared to raw complaint volume alone.
             </p>
+            {hasEqualRawCounts && (
+              <p className="text-[11px] text-[var(--text-tertiary)] italic mt-1">
+                Equal counts are ranked by highest average urgency, then district name
+              </p>
+            )}
           </div>
           <div
             className="text-[11px] font-mono text-[var(--text-tertiary)] bg-[var(--bg-elevated)] px-2.5 py-1.5 rounded border border-[var(--border-dim)] cursor-help shrink-0"
@@ -452,7 +479,7 @@ Recommended Action: ${item.recommended_action}`;
                       +{((item.deprivation_factor ?? 0) * 100).toFixed(1)}%
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-[var(--text-primary)]">
-                      {item.need_weighted_score !== undefined ? item.need_weighted_score.toFixed(3) : "N/A"}
+                      {formatNeedScore(item.need_weighted_score)}
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono font-bold text-[var(--brand-secondary)]">
                       #{item.rank}
@@ -644,9 +671,7 @@ Recommended Action: ${item.recommended_action}`;
                           Need Score
                         </div>
                         <div className="text-[15px] font-mono font-bold text-[var(--brand-secondary)]">
-                          {item.need_weighted_score !== undefined
-                            ? item.need_weighted_score.toFixed(2)
-                            : "N/A"}
+                          {formatNeedScore(item.need_weighted_score)}
                         </div>
                       </div>
 

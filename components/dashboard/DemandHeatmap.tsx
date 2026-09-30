@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { GoogleMap } from "@react-google-maps/api";
-import { Map as MapIcon, Layers, Info, Filter, AlertCircle } from "lucide-react";
+import { Map as MapIcon, Layers, Info, Filter, AlertCircle, Globe2 } from "lucide-react";
 import { Submission } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -15,6 +15,7 @@ interface DemandHeatmapProps {
   onCategoryChange?: (category: string) => void;
   isLoading?: boolean;
   className?: string;
+  isBricsOpen?: boolean;
 }
 
 const CATEGORY_FILTERS: { key: string; label: string }[] = [
@@ -132,9 +133,13 @@ export default function DemandHeatmap({
   onCategoryChange,
   isLoading = false,
   className = "",
+  isBricsOpen = false,
 }: DemandHeatmapProps) {
   const [internalCategory, setInternalCategory] = useState<string>("all");
   const categoryFilter = selectedCategory !== undefined ? selectedCategory : internalCategory;
+
+  const [internalBricsOpen, setInternalBricsOpen] = useState<boolean>(false);
+  const effectiveBricsOpen = isBricsOpen || internalBricsOpen;
 
   const handleCategorySelect = (catKey: string) => {
     if (onCategoryChange) {
@@ -147,9 +152,34 @@ export default function DemandHeatmap({
   const [realtimeSubmissions, setRealtimeSubmissions] = useState<Submission[]>([]);
   const mapRef = useRef<google.maps.Map | null>(null);
   const deckOverlayRef = useRef<any | null>(null);
+  const hasFittedBoundsRef = useRef<boolean>(false);
+  const prevBricsOpenRef = useRef<boolean>(effectiveBricsOpen);
 
   // Single shared useJsApiLoader hook across NagarVaani
   const { isLoaded, loadError, hasMapsKey } = useSharedGoogleMapsLoader();
+
+  // Helper to fit map bounds to points
+  const fitMapToBounds = useCallback((map: google.maps.Map, points: Submission[]) => {
+    if (typeof window === "undefined" || !window.google?.maps) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    let count = 0;
+    points.forEach((s) => {
+      if (
+        typeof s.lat === "number" &&
+        Number.isFinite(s.lat) &&
+        typeof s.lng === "number" &&
+        Number.isFinite(s.lng) &&
+        (s.lat !== 0 || s.lng !== 0)
+      ) {
+        bounds.extend({ lat: s.lat, lng: s.lng });
+        count++;
+      }
+    });
+    if (count > 0) {
+      map.fitBounds(bounds, 30);
+      hasFittedBoundsRef.current = true;
+    }
+  }, []);
 
   useEffect(() => {
     if (isDemoMode()) {
@@ -208,15 +238,23 @@ export default function DemandHeatmap({
     }
   }, [initialSubmissions]);
 
-  const filteredSubmissions = useMemo(() => {
+  // Keep BRICS points hidden unless the Beyond India view is open
+  const countryFilteredSubmissions = useMemo(() => {
     const source = realtimeSubmissions.length > 0 ? realtimeSubmissions : initialSubmissions;
-    if (categoryFilter === "all") {
+    if (effectiveBricsOpen) {
       return source;
     }
-    return source.filter(
+    return source.filter((s) => (s.country || "India").trim().toLowerCase() === "india");
+  }, [realtimeSubmissions, initialSubmissions, effectiveBricsOpen]);
+
+  const filteredSubmissions = useMemo(() => {
+    if (categoryFilter === "all") {
+      return countryFilteredSubmissions;
+    }
+    return countryFilteredSubmissions.filter(
       (s) => s.category?.toLowerCase() === categoryFilter.toLowerCase()
     );
-  }, [realtimeSubmissions, initialSubmissions, categoryFilter]);
+  }, [countryFilteredSubmissions, categoryFilter]);
 
   // Keep heatmap points valid (finite lat/lng within bounds)
   const validSubmissions = useMemo(() => {
@@ -233,6 +271,21 @@ export default function DemandHeatmap({
         (s.lat !== 0 || s.lng !== 0)
     );
   }, [filteredSubmissions]);
+
+  // Fit bounds to Indian points on initial load
+  useEffect(() => {
+    if (mapRef.current && !hasFittedBoundsRef.current && validSubmissions.length > 0) {
+      fitMapToBounds(mapRef.current, validSubmissions);
+    }
+  }, [validSubmissions, fitMapToBounds]);
+
+  // Re-fit bounds if user opens/closes Beyond India view
+  useEffect(() => {
+    if (mapRef.current && prevBricsOpenRef.current !== effectiveBricsOpen && validSubmissions.length > 0) {
+      prevBricsOpenRef.current = effectiveBricsOpen;
+      fitMapToBounds(mapRef.current, validSubmissions);
+    }
+  }, [effectiveBricsOpen, validSubmissions, fitMapToBounds]);
 
   const updateDeckOverlay = useCallback(async () => {
     if (!deckOverlayRef.current) return;
@@ -267,6 +320,9 @@ export default function DemandHeatmap({
   const onMapLoad = useCallback(
     async (map: google.maps.Map) => {
       mapRef.current = map;
+      if (!hasFittedBoundsRef.current && validSubmissions.length > 0) {
+        fitMapToBounds(map, validSubmissions);
+      }
       try {
         const { GoogleMapsOverlay } = await loadDeckGl();
         if (!deckOverlayRef.current) {
@@ -281,7 +337,7 @@ export default function DemandHeatmap({
         console.warn("Failed to initialize deck.gl overlay on map load:", err);
       }
     },
-    [updateDeckOverlay]
+    [updateDeckOverlay, validSubmissions, fitMapToBounds]
   );
 
   // Group submissions by lat/lng quadrant into a 10×10 grid of cells for no-key fallback
@@ -378,6 +434,19 @@ export default function DemandHeatmap({
           <span className="hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded-full bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] font-medium">
             {validSubmissions.length} hotspots
           </span>
+          <button
+            type="button"
+            onClick={() => setInternalBricsOpen((prev) => !prev)}
+            className={`hidden md:inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+              effectiveBricsOpen
+                ? "bg-[rgba(99,102,241,0.15)] border-[rgba(99,102,241,0.35)] text-[var(--brand-secondary)] font-semibold"
+                : "bg-[var(--bg-elevated)] border-[var(--border-dim)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+            }`}
+            title={effectiveBricsOpen ? "Beyond India (BRICS) view open" : "Click to view Beyond India (BRICS) points"}
+          >
+            <Globe2 className="w-3 h-3" />
+            <span>{effectiveBricsOpen ? "Beyond India" : "India View"}</span>
+          </button>
         </div>
 
         {/* Filter Pills */}

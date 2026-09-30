@@ -485,6 +485,7 @@ export default function DashboardPage({
               <DemandHeatmap
                 submissions={filteredSubmissions}
                 isLoading={isLoading}
+                isBricsOpen={false}
               />
             </div>
             <div className="lg:col-span-4">
@@ -517,6 +518,7 @@ export default function DashboardPage({
           <DemandHeatmap
             submissions={filteredSubmissions}
             isLoading={isLoading}
+            isBricsOpen={false}
           />
           <StatsPanel
             submissions={filteredSubmissions}
@@ -533,6 +535,11 @@ export default function DashboardPage({
       {/* ========================================================================= */}
       {activeTab === "brics" && (
         <div className="space-y-4">
+          <DemandHeatmap
+            submissions={filteredSubmissions}
+            isLoading={isLoading}
+            isBricsOpen={true}
+          />
           <BRICSComparison
             submissions={filteredSubmissions}
             isLoading={isLoading}

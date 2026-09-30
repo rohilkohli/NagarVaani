@@ -4,6 +4,7 @@ import React from "react";
 import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
 import { useLanguage } from "@/lib/languageContext";
+import { isDemoMode } from "@/lib/appMode";
 import {
   LayoutDashboard,
   Map,
@@ -34,6 +35,7 @@ export default function Sidebar({
   className = "",
 }: SidebarProps) {
   const { t } = useLanguage();
+  const isDemo = isDemoMode();
 
   const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "overview", label: t("overview", "Overview"), icon: LayoutDashboard },
@@ -97,12 +99,20 @@ export default function Sidebar({
 
       {/* BOTTOM OF SIDEBAR (PINNED) */}
       <div className="p-3 border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] space-y-2">
-        {/* Row 1: green pulse dot + "LIVE" in green micro + Theme Toggle */}
+        {/* Row 1: dot + "DEMO"/"LIVE" micro + Theme Toggle */}
         <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-dim)]">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-[var(--green)] live-pulse shrink-0"></span>
-            <span className="text-[10px] font-bold tracking-[0.06em] text-[var(--green)] uppercase">
-              LIVE
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                isDemo ? "bg-amber-500" : "bg-[var(--green)] live-pulse"
+              }`}
+            ></span>
+            <span
+              className={`text-[10px] font-bold tracking-[0.06em] uppercase ${
+                isDemo ? "text-amber-500" : "text-[var(--green)]"
+              }`}
+            >
+              {isDemo ? "DEMO" : "LIVE"}
             </span>
           </div>
           <ThemeToggle id="sidebar-theme-toggle" />

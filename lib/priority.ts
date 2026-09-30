@@ -217,6 +217,26 @@ export interface ClusterableSubmissionInput {
 /**
  * Aggregates citizen complaints by `(district, category)`, joins each cluster with
  * `NationalDistrictRecord` demographic & infrastructure indicators, and computes both
+/**
+ * Shared deterministic tie-break for raw complaint ranking:
+ * 1. Highest raw complaint count desc
+ * 2. Highest average urgency desc
+ * 3. District name alphabetical asc
+ */
+export function compareRawRank(
+  a: { count: number; avg_urgency?: number; mean_urgency?: number; district: string },
+  b: { count: number; avg_urgency?: number; mean_urgency?: number; district: string }
+): number {
+  if (b.count !== a.count) return b.count - a.count;
+  const aUrg = a.avg_urgency ?? a.mean_urgency ?? 0;
+  const bUrg = b.avg_urgency ?? b.mean_urgency ?? 0;
+  if (bUrg !== aUrg) return bUrg - aUrg;
+  return a.district.localeCompare(b.district);
+}
+
+/**
+ * Joins clustered citizen submissions with the 2011 Census PCA dataset, computes
+ * the multi-factor need-weighted priority score, and assigns deterministic ranks:
  * `raw_rank` (by raw complaint count) and `need_rank` (by need-weighted score).
  */
 export function joinAndScoreClusters(
@@ -380,11 +400,7 @@ export function joinAndScoreClusters(
   });
 
   // 1. Assign raw_rank (sorted by raw complaint count desc, then avg_urgency desc, then district asc)
-  const byRaw = [...intermediate].sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count;
-    if (b.avg_urgency !== a.avg_urgency) return b.avg_urgency - a.avg_urgency;
-    return a.district.localeCompare(b.district);
-  });
+  const byRaw = [...intermediate].sort(compareRawRank);
   byRaw.forEach((item, idx) => {
     item.raw_rank = idx + 1;
   });

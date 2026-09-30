@@ -581,7 +581,7 @@ export default function App() {
               <BrandMark size={14} className="shrink-0" />
               <span className="font-semibold text-[var(--text-secondary)]">NagarVaani</span>
               <span>•</span>
-              <span>Multilingual AI Infrastructure Intelligence for BRICS Nations</span>
+              <span>Multilingual AI infrastructure intelligence for India, extensible to BRICS</span>
               <span>•</span>
               <a
                 href="/data/SOURCES.md"
