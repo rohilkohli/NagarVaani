@@ -26,6 +26,8 @@
     "@deck.gl/core": "^9.3.10",
     "@deck.gl/google-maps": "^9.3.10",
     "@deck.gl/react": "^9.3.10",
+    "@google-cloud/firestore": "^9.3.0",
+    "@google-cloud/storage": "^8.2.0",
     "@google/genai": "^2.4.0",
     "@react-google-maps/api": "^2.20.8",
     "@tailwindcss/vite": "^4.1.14",
@@ -51,6 +53,7 @@
     "react-dom": "^19.0.1",
     "react-i18next": "^17.0.12",
     "recharts": "^3.10.1",
+    "save": "^2.9.0",
     "tailwind-merge": "^3.6.0",
     "tsx": "^4.23.15",
     "vite": "^6.2.3"

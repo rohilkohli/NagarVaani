@@ -1,20 +1,17 @@
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production=false
+RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev \
+    && node -e "require('@google-cloud/firestore'); require('@google-cloud/storage'); console.log('firebase deps ok')"
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/data ./data
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
-CMD ["npx", "tsx", "server.ts"]
+EXPOSE 8080
+CMD ["node", "dist/server.cjs"]

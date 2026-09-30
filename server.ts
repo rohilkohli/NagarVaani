@@ -153,7 +153,7 @@ if (IS_DEMO) {
 }
 
 async function startServer() {
-  await initializeGeminiModel();
+  void initializeGeminiModel().catch((error) => console.warn("Gemini model init failed:", error)); git
   const app = express();
   app.set("trust proxy", 1);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -868,76 +868,76 @@ Return JSON strictly in this format:
   });
 
   app.post("/api/admin/seed", async (req, res) => {
-      const authorization = String(req.headers.authorization || "");
-      const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-      const session = verifyAdminSessionToken(token);
-      if (!session.valid || !session.payload || !["admin", "supervisor"].includes(session.payload.role)) {
-        return res.status(403).json({ success: false, error: "A supervisor role is required to seed data." });
-      }
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid || !session.payload || !["admin", "supervisor"].includes(session.payload.role)) {
+      return res.status(403).json({ success: false, error: "A supervisor role is required to seed data." });
+    }
 
-      try {
-        const firestore = getAdminFirestore();
-        const batch = firestore.batch();
-        for (const item of ALL_SEED_SUBMISSIONS.slice(0, 50)) {
-          const ref = firestore.collection("submissions").doc();
-          batch.set(ref, {
-            ...item,
-            created_at: item.created_at.toISOString(),
-            source: "seed",
-            seeded_by: session.payload.sub,
-          });
+    try {
+      const firestore = getAdminFirestore();
+      const batch = firestore.batch();
+      for (const item of ALL_SEED_SUBMISSIONS.slice(0, 50)) {
+        const ref = firestore.collection("submissions").doc();
+        batch.set(ref, {
+          ...item,
+          created_at: item.created_at.toISOString(),
+          source: "seed",
+          seeded_by: session.payload.sub,
+        });
+      }
+      await batch.commit();
+      return res.status(201).json({ success: true, count: Math.min(50, ALL_SEED_SUBMISSIONS.length) });
+    } catch (error) {
+      console.error("Admin seed error", { requestId: res.locals.requestId, error });
+      return res.status(503).json({ success: false, error: "Seed service is unavailable." });
+    }
+  });
+
+  app.post("/api/submissions/:submissionId/upvote", async (req, res) => {
+    try {
+      const firestore = getAdminFirestore();
+      const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+      const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
+      const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
+      const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
+      await firestore.runTransaction(async (transaction) => {
+        const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
+        if (!submission.exists) throw new Error("Complaint not found.");
+        if (!upvote.exists) {
+          transaction.set(upvoteRef, { submissionId: req.params.submissionId, createdAt: new Date().toISOString() });
+          transaction.update(submissionRef, { upvotes: Number(submission.data()?.upvotes || 0) + 1 });
         }
-        await batch.commit();
-        return res.status(201).json({ success: true, count: Math.min(50, ALL_SEED_SUBMISSIONS.length) });
-      } catch (error) {
-        console.error("Admin seed error", { requestId: res.locals.requestId, error });
-        return res.status(503).json({ success: false, error: "Seed service is unavailable." });
-      }
-    });
+      });
+      return res.status(201).json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
+      return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
+    }
+  });
 
-    app.post("/api/submissions/:submissionId/upvote", async (req, res) => {
-      try {
-        const firestore = getAdminFirestore();
-        const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
-        const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
-        const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
-        const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
-        await firestore.runTransaction(async (transaction) => {
-          const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
-          if (!submission.exists) throw new Error("Complaint not found.");
-          if (!upvote.exists) {
-            transaction.set(upvoteRef, { submissionId: req.params.submissionId, createdAt: new Date().toISOString() });
-            transaction.update(submissionRef, { upvotes: Number(submission.data()?.upvotes || 0) + 1 });
-          }
-        });
-        return res.status(201).json({ success: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
-        return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
-      }
-    });
-
-    app.delete("/api/submissions/:submissionId/upvote", async (req, res) => {
-      try {
-        const firestore = getAdminFirestore();
-        const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
-        const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
-        const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
-        const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
-        await firestore.runTransaction(async (transaction) => {
-          const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
-          if (!submission.exists) throw new Error("Complaint not found.");
-          if (upvote.exists) {
-            transaction.delete(upvoteRef);
-            transaction.update(submissionRef, { upvotes: Math.max(0, Number(submission.data()?.upvotes || 0) - 1) });
-          }
-        });
-        return res.json({ success: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
-        return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
-      }
-    });
+  app.delete("/api/submissions/:submissionId/upvote", async (req, res) => {
+    try {
+      const firestore = getAdminFirestore();
+      const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+      const fingerprint = String(req.ip || req.headers["x-forwarded-for"] || "anonymous").split(",")[0].trim();
+      const upvoteId = Buffer.from(`${fingerprint}:${req.params.submissionId}`).toString("base64url").slice(0, 120);
+      const upvoteRef = firestore.collection("upvotes").doc(upvoteId);
+      await firestore.runTransaction(async (transaction) => {
+        const [submission, upvote] = await Promise.all([transaction.get(submissionRef), transaction.get(upvoteRef)]);
+        if (!submission.exists) throw new Error("Complaint not found.");
+        if (upvote.exists) {
+          transaction.delete(upvoteRef);
+          transaction.update(submissionRef, { upvotes: Math.max(0, Number(submission.data()?.upvotes || 0) - 1) });
+        }
+      });
+      return res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upvote service is unavailable.";
+      return res.status(message === "Complaint not found." ? 404 : 503).json({ success: false, error: message });
+    }
+  });
 
   app.post("/api/submissions", async (req, res) => {
     const payload = req.body || {};
