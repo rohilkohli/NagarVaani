@@ -12,7 +12,7 @@
     "check:model": "tsx scripts/check-model.ts",
     "eval": "tsx scripts/eval-classifier.ts",
     "import:nfhs5": "tsx scripts/import-nfhs5.ts",
-    "test": "tsx --test lib/env.test.ts lib/priority.test.ts lib/eval.test.ts lib/transcribe.test.ts",
+    "test": "tsx --test lib/*.test.ts",
     "smoke": "tsx scripts/smoke.ts",
     "deploy": "bash deploy.sh",
     "docker:build": "docker build -t nagarvaani .",

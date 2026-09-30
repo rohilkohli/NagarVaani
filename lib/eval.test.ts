@@ -85,10 +85,10 @@ test("ruleBasedClassify detects correct category and extracts urgency for multil
 
 test("computeAccuracy calculates exact accuracy and handles empty lists", () => {
   const sampleData: EvalPrediction[] = [
-    { id: "1", text: "a", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
-    { id: "2", text: "b", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
-    { id: "3", text: "c", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
-    { id: "4", text: "d", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 2, predicted_urgency: 2 },
+    { id: "1", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
+    { id: "2", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
+    { id: "3", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
+    { id: "4", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 2, predicted_urgency: 2 },
   ];
 
   // 3 correct out of 4 = 0.75 (75%)
@@ -100,10 +100,10 @@ test("computeAccuracy calculates exact accuracy and handles empty lists", () => 
 
 test("computeAccuracyPerLanguage groups accuracy per language accurately", () => {
   const sampleData: EvalPrediction[] = [
-    { id: "1", text: "a", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
-    { id: "2", text: "b", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
-    { id: "3", text: "c", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
-    { id: "4", text: "d", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 2, predicted_urgency: 2 },
+    { id: "1", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
+    { id: "2", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
+    { id: "3", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
+    { id: "4", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 2, predicted_urgency: 2 },
   ];
 
   const perLang = computeAccuracyPerLanguage(sampleData);
@@ -118,8 +118,8 @@ test("computeAccuracyPerLanguage groups accuracy per language accurately", () =>
 
 test("computeConfusionMatrix builds valid 2D frequency matrix", () => {
   const sampleData: EvalPrediction[] = [
-    { id: "1", text: "a", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
-    { id: "2", text: "b", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
+    { id: "1", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
+    { id: "2", language: "Tamil", gold_category: "electricity", predicted_category: "roads", gold_urgency: 5, predicted_urgency: 3 },
   ];
 
   const categories = ["roads", "water", "electricity"];
@@ -135,9 +135,9 @@ test("computeConfusionMatrix builds valid 2D frequency matrix", () => {
 
 test("computeUrgencyMAE computes correct Mean Absolute Error", () => {
   const sampleData: EvalPrediction[] = [
-    { id: "1", text: "a", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 5 }, // |4-5| = 1
-    { id: "2", text: "b", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 1 }, // |3-1| = 2
-    { id: "3", text: "c", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 5, predicted_urgency: 5 }, // |5-5| = 0
+    { id: "1", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 5 }, // |4-5| = 1
+    { id: "2", language: "Hindi", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 1 }, // |3-1| = 2
+    { id: "3", language: "Tamil", gold_category: "health", predicted_category: "health", gold_urgency: 5, predicted_urgency: 5 }, // |5-5| = 0
   ];
 
   // MAE = (1 + 2 + 0) / 3 = 1.00
@@ -147,8 +147,8 @@ test("computeUrgencyMAE computes correct Mean Absolute Error", () => {
 
 test("formatEvalReportMarkdown generates properly formatted markdown table", () => {
   const sampleData: EvalPrediction[] = [
-    { id: "1", text: "a", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
-    { id: "2", text: "b", language: "Bengali", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
+    { id: "1", language: "Hindi", gold_category: "roads", predicted_category: "roads", gold_urgency: 4, predicted_urgency: 4 },
+    { id: "2", language: "Bengali", gold_category: "water", predicted_category: "water", gold_urgency: 3, predicted_urgency: 3 },
   ];
 
   const cats = ["roads", "water"];

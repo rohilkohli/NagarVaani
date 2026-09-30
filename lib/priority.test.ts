@@ -201,10 +201,20 @@ test("computeNeedWeightedScore handles normal data, aspirational boost, missing 
     meanUnresolvedAgeDays: 5,
     districtRecord: partialDistrict,
   });
-  // Average deficit of available = (0.10 + 0.30) / 2 = 0.20
-  // Expected deprivation = literacyDeficit (0.15 * 0.15) + infraDeficit (0.25 * 0.20) = 0.0225 + 0.05 = 0.0725
+  // Arithmetic by hand from documented formula in lib/priority.ts:
+  // 1. Aspirational component: aspirational_district is false -> 0.0000
+  // 2. Literacy deficit: (100 - 85.0) / 100 = 0.15
+  //    Weighted literacy deprivation: PRIORITY_WEIGHTS.literacyGapWeight (0.25) * 0.15 = 0.0375
+  // 3. Infrastructure indicators available: [90.0, 70.0] (2 of 3 indicators present)
+  //    Electricity deficit = (100 - 90.0) / 100 = 0.10
+  //    Water deficit       = (100 - 70.0) / 100 = 0.30
+  //    Mean deficit over available indicators = (0.10 + 0.30) / 2 = 0.20
+  //    Weighted infra deprivation: PRIORITY_WEIGHTS.infraGapWeight (0.40) * 0.20 = 0.0800
+  // 4. Total Deprivation Factor = 0 + 0.0375 + 0.0800 = 0.1175
+  // Note: The previous test expectation (0.0725) was wrong because it used incorrect weights
+  // (0.15 instead of 0.25, and 0.25 instead of 0.40). The implementation in lib/priority.ts is correct.
   assert.equal(partialScore.hasInfraData, true);
-  assert.ok(Math.abs(partialScore.deprivationFactor - 0.0725) < 0.001);
+  assert.ok(Math.abs(partialScore.deprivationFactor - 0.1175) < 0.001);
 });
 
 test("joinAndScoreClusters re-ranks smaller/aspirational districts above high-population metros (Raw vs Need rank)", () => {

@@ -6,7 +6,7 @@ export type ClassificationResult = {
   urgency: number;
   summary_english: string;
   language_detected: string;
-  english_translation?: string;
+  english_translation: string;
   keywords: string[];
   classified_by: ClassificationSource;
   confidence: ClassificationConfidence;
@@ -67,8 +67,8 @@ export function detectLanguageFromText(text: string): DetectedLanguage {
 
 export const CATEGORY_KEYWORDS: Record<ClassificationResult["category"], string[]> = {
   roads: [
-    // English
-    "road", "roads", "pothole", "potholes", "pavement", "bridge", "highway", "street", "crater", "asphalt", "traffic", "flyover", "culvert", "accident",
+    // English & Romanized Hindi
+    "road", "roads", "pothole", "potholes", "pavement", "bridge", "highway", "street", "crater", "asphalt", "traffic", "flyover", "culvert", "accident", "sadak", "gaddha", "rasta",
     // Hindi
     "सड़क", "सड़क", "सड़कें", "गड्ढा", "गड्ढे", "पुल", "मार्ग", "हाईवे", "रास्ता", "डामर", "दुर्घटना",
     // Bengali
@@ -91,8 +91,8 @@ export const CATEGORY_KEYWORDS: Record<ClassificationResult["category"], string[
     "ରାସ୍ତା", "ଖାଲ", "ପୋଲ", "ରାଜପଥ", "ଦୁର୍ଘଟଣା", "ଗଳି",
   ],
   water: [
-    // English
-    "water", "pipeline", "leak", "leakage", "tap", "drinking", "contamination", "supply", "borewell", "handpump", "drain", "pressure", "scarcity",
+    // English & Romanized Hindi
+    "water", "pipeline", "leak", "leakage", "tap", "drinking", "contamination", "supply", "borewell", "handpump", "drain", "pressure", "scarcity", "paani", "jal", "risav",
     // Hindi
     "पानी", "जल", "नल", "पाइप", "रिसाव", "पेयजल", "बोरवेल", "हैंडपंप", "आपूर्ति", "दूषित", "खारा",
     // Bengali
@@ -115,8 +115,8 @@ export const CATEGORY_KEYWORDS: Record<ClassificationResult["category"], string[
     "ପାଣି", "ଜଳ", "ପାଇପ୍", "ଚୁଆଁ", "ନଳକୂପ", "ଯୋଗାଣ", "ଦୂଷିତ",
   ],
   electricity: [
-    // English
-    "electricity", "power", "blackout", "transformer", "voltage", "wiring", "wire", "outage", "sparking", "shock", "streetlight", "meter", "current",
+    // English & Romanized Hindi
+    "electricity", "power", "blackout", "transformer", "voltage", "wiring", "wire", "outage", "sparking", "shock", "streetlight", "meter", "electric current", "bijli", "batti",
     // Hindi
     "बिजली", "विद्युत", "करंट", "ट्रांसफॉर्मर", "तार", "वोल्टेज", "कटौती", "अंधेरा", "स्ट्रीट", "मीटर", "शॉर्ट",
     // Bengali
@@ -139,8 +139,8 @@ export const CATEGORY_KEYWORDS: Record<ClassificationResult["category"], string[
     "ବିଜୁଳି", "ବିଦ୍ୟୁତ", "ଟ୍ରାନ୍ସଫର୍ମର", "ତାର", "ଭୋଲ୍ଟେଜ", "ଅନ୍ଧକାର", "ଆଲୋକ",
   ],
   sanitation: [
-    // English
-    "garbage", "waste", "trash", "sewage", "sewer", "drain", "drainage", "mosquito", "latrine", "toilet", "stagnant", "dump", "cleanliness", "swachh",
+    // English & Romanized Hindi
+    "garbage", "waste", "trash", "sewage", "sewer", "drain", "drainage", "mosquito", "latrine", "toilet", "stagnant", "dump", "cleanliness", "swachh", "kachra", "gandagi",
     // Hindi
     "कचरा", "नाला", "नाली", "सीवर", "गंदगी", "मच्छर", "शौचालय", "सफाई", "कचरे", "कूड़ेदान",
     // Bengali
@@ -235,8 +235,9 @@ export function ruleBasedClassify(text: string): ClassificationResult {
     const matched = CATEGORY_KEYWORDS[category].filter((keyword) => {
       const lower = keyword.toLocaleLowerCase();
       if (tokens.has(lower)) return true;
-      // Substring check for non-Latin script words (agglutinative languages like Tamil/Telugu/Malayalam/Kannada)
-      if (lower.length >= 3 && cleanText.toLocaleLowerCase().includes(lower)) return true;
+      // Substring check only for non-Latin script words (agglutinative languages like Tamil/Telugu/Malayalam/Kannada)
+      const isNonLatin = /[^\u0000-\u007F]/.test(lower);
+      if (isNonLatin && lower.length >= 3 && cleanText.toLocaleLowerCase().includes(lower)) return true;
       return false;
     });
     return {

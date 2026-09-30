@@ -24,7 +24,7 @@ import axios from "axios";
 import { validateClassifyPayload, validateComplaintPayload, validatePrioritizePayload } from "./lib/validation";
 import { getGeminiModelName, initializeGeminiModel } from "./lib/gemini";
 import { readFileSync } from "fs";
-import { parseGeminiClassification, ruleBasedClassify } from "./lib/classify";
+import { parseGeminiClassification, ruleBasedClassify, type ClassificationResult } from "./lib/classify";
 import { demoAddSubmission, demoGetSubmissions } from "./lib/demoSandbox";
 import {
   joinAndScoreClusters,
@@ -155,7 +155,8 @@ if (IS_DEMO) {
 async function startServer() {
   await initializeGeminiModel();
   const app = express();
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+  app.set("trust proxy", 1);
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
   const PORT = Number(process.env.PORT || 3000);
   const idempotentSubmissions = new Map<string, { createdAt: number; response: Record<string, unknown> }>();
 
@@ -319,10 +320,10 @@ async function startServer() {
   });
 
   // ─── DEMO SANDBOX ROUTES ─────────────────────────────────────────────────
-  // Strict per-IP rate limits protect Gemini quota even in demo mode.
+  // Strict per-IP rate limits protect Gemini quota in demo mode (20 per 15 min per IP).
   const demoSubmitLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5,                    // 5 classifications per IP per 15 min
+    max: 20,                   // 20 classifications per IP per 15 min
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: "Demo classification limit reached. Please wait 15 minutes before submitting again." },
@@ -334,6 +335,23 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
   });
+
+  // Demo daily cost cap on Gemini calls (default 500 per day)
+  const DEMO_GEMINI_DAILY_CAP = Number(process.env.DEMO_GEMINI_DAILY_CAP || 500);
+  let demoGeminiCallsToday = 0;
+  let demoGeminiCurrentDate = new Date().toISOString().slice(0, 10);
+
+  function checkDemoGeminiCap(): { allowed: boolean; remaining: number } {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== demoGeminiCurrentDate) {
+      demoGeminiCurrentDate = today;
+      demoGeminiCallsToday = 0;
+    }
+    if (demoGeminiCallsToday >= DEMO_GEMINI_DAILY_CAP) {
+      return { allowed: false, remaining: 0 };
+    }
+    return { allowed: true, remaining: DEMO_GEMINI_DAILY_CAP - demoGeminiCallsToday };
+  }
 
   /** GET /api/demo/submissions — returns the in-memory sandbox submissions */
   app.get("/api/demo/submissions", demoReadLimiter, (_req, res) => {
@@ -361,17 +379,21 @@ async function startServer() {
     const lat = Number(payload.lat);
     const lng = Number(payload.lng);
 
-    if (!text || text.length > 1000 || !["roads", "water", "electricity", "sanitation", "health", "education", "other"].includes(category) ||
+    // Enforce cost cap: text max 2,000 characters
+    if (!text || text.length > 2000 || !["roads", "water", "electricity", "sanitation", "health", "education", "other"].includes(category) ||
       !Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return res.status(400).json({ success: false, error: "Invalid demo complaint payload." });
+      return res.status(400).json({ success: false, error: "Invalid demo complaint payload. Text must be between 1 and 2,000 characters." });
     }
 
     const complaintText = redactPii(text);
     const apiKey = process.env.GEMINI_API_KEY || "";
     let classifiedBy: "gemini" | "rule-based" = "rule-based";
-    let classResult: { category: string; urgency: number; summary_english: string; language_detected: string; keywords: string[]; confidence: string; classified_by: "gemini" | "rule-based" };
+    let classResult: ClassificationResult;
 
-    if (apiKey && Date.now() >= geminiQuotaCooldownUntil) {
+    const geminiCapStatus = checkDemoGeminiCap();
+    const isDailyCapExceeded = !geminiCapStatus.allowed;
+
+    if (apiKey && !isDailyCapExceeded && Date.now() >= geminiQuotaCooldownUntil) {
       try {
         const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
         const userPrompt = `Classify this citizen complaint and return ONLY valid JSON:
@@ -387,20 +409,28 @@ Return JSON strictly in this format:
           contents: userPrompt,
           config: { responseMimeType: "application/json", maxOutputTokens: 300 },
         });
-        const parsed = parseGeminiClassification(response.text || "", complaintText);
-        classResult = { ...parsed, classified_by: "gemini" };
+        classResult = parseGeminiClassification(response.text || "", complaintText);
         classifiedBy = "gemini";
+        demoGeminiCallsToday += 1;
       } catch (geminiErr: any) {
         if (geminiErr?.status === "RESOURCE_EXHAUSTED" || geminiErr?.message?.includes("429")) {
           geminiQuotaCooldownUntil = Date.now() + 60000;
         }
-        const rb = ruleBasedClassify(complaintText);
-        classResult = { ...rb };
+        classResult = ruleBasedClassify(complaintText);
         classifiedBy = "rule-based";
       }
     } else {
       const rb = ruleBasedClassify(complaintText);
-      classResult = { ...rb };
+      if (isDailyCapExceeded) {
+        classResult = {
+          ...rb,
+          summary_english: `${rb.summary_english} [Demo AI Daily Cap (${DEMO_GEMINI_DAILY_CAP}) Reached — Rule-Based Fallback]`,
+          keywords: [...rb.keywords, "daily-cap-exceeded", "rule-based-fallback"],
+        };
+      } else {
+        classResult = { ...rb };
+      }
+      classifiedBy = "rule-based";
     }
 
     const submission = demoAddSubmission({
@@ -430,15 +460,29 @@ Return JSON strictly in this format:
       classification: classResult,
       engine: classifiedBy,
       sandbox: true,
+      demo_gemini_daily_cap: DEMO_GEMINI_DAILY_CAP,
+      daily_cap_exceeded: isDailyCapExceeded,
+      fallback_tag: isDailyCapExceeded ? "rule-based (daily demo Gemini cap reached)" : undefined,
     });
   });
 
-  /** POST /api/transcribe — Web voice input transcription using Gemini */
+  /** POST /api/transcribe — Web voice input transcription using Gemini with demo cost caps */
   app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     try {
       const file = req.file;
       if (!file) {
         return res.status(400).json({ error: "No audio file provided." });
+      }
+
+      // Demo cost cap: audio file max 5 MB
+      if (file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: "Audio file exceeds maximum demo limit of 5 MB." });
+      }
+
+      // Demo cost cap: audio max 60 seconds
+      const durationSeconds = Number(req.body?.duration || req.headers["x-audio-duration"] || 0);
+      if (durationSeconds > 60) {
+        return res.status(400).json({ error: "Audio exceeds maximum demo duration of 60 seconds." });
       }
 
       const apiKey = process.env.GEMINI_API_KEY;

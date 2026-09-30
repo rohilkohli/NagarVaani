@@ -22,13 +22,13 @@ export interface EvalSample {
 export interface EvalPrediction {
   id: string;
   language: string;
-  language_code: string;
+  language_code?: string;
   gold_category: string;
   predicted_category: string;
   gold_urgency: number;
   predicted_urgency: number;
   detected_language?: string;
-  classified_by: "gemini" | "rule-based";
+  classified_by?: "gemini" | "rule-based";
 }
 
 export interface LanguageAccuracy {
