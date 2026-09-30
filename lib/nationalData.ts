@@ -7,9 +7,13 @@ export interface NationalDistrictRecord {
   population_2011: number | null;
   literacy_rate_2011: number | null;
   aspirational_district: boolean | null;
-  tap_water_coverage_pct: number | null;
+  nfhs5_electricity_pct: number | null;
+  nfhs5_improved_water_pct: number | null;
+  nfhs5_improved_sanitation_pct: number | null;
   pmgsy_road_connectivity_pct: number | null;
-  sanitation_coverage_pct: number | null;
+  // Backward compatibility accessors
+  tap_water_coverage_pct?: number | null;
+  sanitation_coverage_pct?: number | null;
 }
 
 export interface OfficialSchemeInfo {
@@ -99,9 +103,10 @@ export function parseDistrictsCsv(csvText: string): NationalDistrictRecord[] {
   const popIdx = idx("population_2011");
   const litIdx = idx("literacy_rate_2011");
   const aspIdx = idx("aspirational_district");
-  const waterIdx = idx("tap_water_coverage_pct");
+  const elecIdx = idx("nfhs5_electricity_pct");
+  const waterIdx = idx("nfhs5_improved_water_pct") !== -1 ? idx("nfhs5_improved_water_pct") : idx("tap_water_coverage_pct");
+  const sanIdx = idx("nfhs5_improved_sanitation_pct") !== -1 ? idx("nfhs5_improved_sanitation_pct") : idx("sanitation_coverage_pct");
   const roadIdx = idx("pmgsy_road_connectivity_pct");
-  const sanIdx = idx("sanitation_coverage_pct");
 
   if (stateIdx === -1 || distIdx === -1) {
     throw new Error("Invalid district CSV header: 'state' and 'district' columns are required.");
@@ -117,6 +122,11 @@ export function parseDistrictsCsv(csvText: string): NationalDistrictRecord[] {
     const aliasKey = district.toLowerCase();
     const aliases = DEFAULT_ALIASES[aliasKey] || [district];
 
+    const elecVal = elecIdx >= 0 ? parseNullableNumber(cols[elecIdx], { min: 0, max: 100 }) : null;
+    const waterVal = waterIdx >= 0 ? parseNullableNumber(cols[waterIdx], { min: 0, max: 100 }) : null;
+    const sanVal = sanIdx >= 0 ? parseNullableNumber(cols[sanIdx], { min: 0, max: 100 }) : null;
+    const roadVal = roadIdx >= 0 ? parseNullableNumber(cols[roadIdx], { min: 0, max: 100 }) : null;
+
     results.push({
       state,
       district,
@@ -124,9 +134,12 @@ export function parseDistrictsCsv(csvText: string): NationalDistrictRecord[] {
       population_2011: popIdx >= 0 ? parseNullableNumber(cols[popIdx], { min: 0 }) : null,
       literacy_rate_2011: litIdx >= 0 ? parseNullableNumber(cols[litIdx], { min: 0, max: 100 }) : null,
       aspirational_district: aspIdx >= 0 ? parseNullableBoolean(cols[aspIdx]) : null,
-      tap_water_coverage_pct: waterIdx >= 0 ? parseNullableNumber(cols[waterIdx], { min: 0, max: 100 }) : null,
-      pmgsy_road_connectivity_pct: roadIdx >= 0 ? parseNullableNumber(cols[roadIdx], { min: 0, max: 100 }) : null,
-      sanitation_coverage_pct: sanIdx >= 0 ? parseNullableNumber(cols[sanIdx], { min: 0, max: 100 }) : null,
+      nfhs5_electricity_pct: elecVal,
+      nfhs5_improved_water_pct: waterVal,
+      nfhs5_improved_sanitation_pct: sanVal,
+      pmgsy_road_connectivity_pct: roadVal,
+      tap_water_coverage_pct: waterVal,
+      sanitation_coverage_pct: sanVal,
     });
   }
 
@@ -137,32 +150,44 @@ export function parseDistrictsCsv(csvText: string): NationalDistrictRecord[] {
  * Returns the canonical national district dataset (safe for both Node.js and browser).
  */
 export function getNationalDistricts(): NationalDistrictRecord[] {
-  return (districtsJson as NationalDistrictRecord[]).map((row) => ({
+  return (districtsJson as any[]).map((row) => ({
     state: row.state,
     district: row.district,
-    aliases: row.aliases || DEFAULT_ALIASES[row.district.toLowerCase()] || [row.district],
+    aliases: row.aliases || DEFAULT_ALIASES[row.district?.toLowerCase()] || [row.district],
     population_2011: typeof row.population_2011 === "number" && row.population_2011 >= 0 ? row.population_2011 : null,
     literacy_rate_2011:
       typeof row.literacy_rate_2011 === "number" && row.literacy_rate_2011 >= 0 && row.literacy_rate_2011 <= 100
         ? row.literacy_rate_2011
         : null,
     aspirational_district: typeof row.aspirational_district === "boolean" ? row.aspirational_district : null,
-    tap_water_coverage_pct:
-      typeof row.tap_water_coverage_pct === "number" && row.tap_water_coverage_pct >= 0 && row.tap_water_coverage_pct <= 100
-        ? row.tap_water_coverage_pct
+    nfhs5_electricity_pct:
+      typeof row.nfhs5_electricity_pct === "number" && row.nfhs5_electricity_pct >= 0 && row.nfhs5_electricity_pct <= 100
+        ? row.nfhs5_electricity_pct
+        : null,
+    nfhs5_improved_water_pct:
+      typeof row.nfhs5_improved_water_pct === "number" && row.nfhs5_improved_water_pct >= 0 && row.nfhs5_improved_water_pct <= 100
+        ? row.nfhs5_improved_water_pct
+        : null,
+    nfhs5_improved_sanitation_pct:
+      typeof row.nfhs5_improved_sanitation_pct === "number" && row.nfhs5_improved_sanitation_pct >= 0 && row.nfhs5_improved_sanitation_pct <= 100
+        ? row.nfhs5_improved_sanitation_pct
         : null,
     pmgsy_road_connectivity_pct:
-      typeof row.pmgsy_road_connectivity_pct === "number" &&
-      row.pmgsy_road_connectivity_pct >= 0 &&
-      row.pmgsy_road_connectivity_pct <= 100
+      typeof row.pmgsy_road_connectivity_pct === "number" && row.pmgsy_road_connectivity_pct >= 0 && row.pmgsy_road_connectivity_pct <= 100
         ? row.pmgsy_road_connectivity_pct
         : null,
+    tap_water_coverage_pct:
+      typeof row.nfhs5_improved_water_pct === "number"
+        ? row.nfhs5_improved_water_pct
+        : typeof row.tap_water_coverage_pct === "number"
+          ? row.tap_water_coverage_pct
+          : null,
     sanitation_coverage_pct:
-      typeof row.sanitation_coverage_pct === "number" &&
-      row.sanitation_coverage_pct >= 0 &&
-      row.sanitation_coverage_pct <= 100
-        ? row.sanitation_coverage_pct
-        : null,
+      typeof row.nfhs5_improved_sanitation_pct === "number"
+        ? row.nfhs5_improved_sanitation_pct
+        : typeof row.sanitation_coverage_pct === "number"
+          ? row.sanitation_coverage_pct
+          : null,
   }));
 }
 

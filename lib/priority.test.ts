@@ -31,10 +31,18 @@ test("parseDistrictsCsv loads real published figures and preserves null for unve
   assert.equal(ranchi.population_2011, 2914253);
   assert.equal(ranchi.literacy_rate_2011, 76.06);
   assert.equal(ranchi.aspirational_district, true);
-  // Unverified columns must remain strictly null (never fabricated)
-  assert.equal(ranchi.tap_water_coverage_pct, null);
+  // Unverified columns in Phase 2 states must remain strictly null (never fabricated)
+  assert.equal(ranchi.nfhs5_electricity_pct, null);
+  assert.equal(ranchi.nfhs5_improved_water_pct, null);
+  assert.equal(ranchi.nfhs5_improved_sanitation_pct, null);
   assert.equal(ranchi.pmgsy_road_connectivity_pct, null);
-  assert.equal(ranchi.sanitation_coverage_pct, null);
+
+  // Verified Phase 1 districts must contain real NFHS-5 values
+  const patna = parsed.find((d) => d.district === "Patna");
+  assert.ok(patna, "Patna must exist in districts.csv");
+  assert.equal(patna.nfhs5_electricity_pct, 99.0);
+  assert.equal(patna.nfhs5_improved_water_pct, 98.8);
+  assert.equal(patna.nfhs5_improved_sanitation_pct, 61.0);
 
   // Verify JSON and CSV are in sync
   const jsonRecords = getNationalDistricts();
@@ -54,19 +62,20 @@ test("parseDistrictsCsv handles comments, blank cells, inline numeric infra valu
   const sampleRanchi = sampleParsed.find((d) => d.district === "Ranchi");
   assert.ok(sampleRanchi);
   assert.equal(sampleRanchi.population_2011, 2914253);
-  assert.equal(sampleRanchi.tap_water_coverage_pct, null);
+  assert.equal(sampleRanchi.nfhs5_electricity_pct, null);
 
-  // Verify parser also parses numeric infrastructure columns when filled in manually
+  // Verify parser also parses numeric infrastructure columns when filled
   const filledCsv = [
     "# comment line",
-    "state,district,population_2011,literacy_rate_2011,aspirational_district,tap_water_coverage_pct,pmgsy_road_connectivity_pct,sanitation_coverage_pct",
-    "Odisha,Koraput,1379647,49.21,true,62.5,78.0,71.4",
+    "state,district,population_2011,literacy_rate_2011,aspirational_district,nfhs5_electricity_pct,nfhs5_improved_water_pct,nfhs5_improved_sanitation_pct,pmgsy_road_connectivity_pct",
+    "Odisha,Koraput,1379647,49.21,true,85.5,92.0,64.0,",
   ].join("\n");
   const filledParsed = parseDistrictsCsv(filledCsv);
   assert.equal(filledParsed.length, 1);
-  assert.equal(filledParsed[0].tap_water_coverage_pct, 62.5);
-  assert.equal(filledParsed[0].pmgsy_road_connectivity_pct, 78.0);
-  assert.equal(filledParsed[0].sanitation_coverage_pct, 71.4);
+  assert.equal(filledParsed[0].nfhs5_electricity_pct, 85.5);
+  assert.equal(filledParsed[0].nfhs5_improved_water_pct, 92.0);
+  assert.equal(filledParsed[0].nfhs5_improved_sanitation_pct, 64.0);
+  assert.equal(filledParsed[0].pmgsy_road_connectivity_pct, null);
 });
 
 test("findDistrictRecord resolves exact names and city/district aliases", () => {
@@ -118,9 +127,10 @@ test("computeNeedWeightedScore handles normal data, aspirational boost, missing 
       population_2011: 0,
       literacy_rate_2011: 70,
       aspirational_district: false,
-      tap_water_coverage_pct: null,
+      nfhs5_electricity_pct: null,
+      nfhs5_improved_water_pct: null,
+      nfhs5_improved_sanitation_pct: null,
       pmgsy_road_connectivity_pct: null,
-      sanitation_coverage_pct: null,
     },
   });
   assert.equal(zeroPopDistrict.hasPopulationData, false);
@@ -134,9 +144,10 @@ test("computeNeedWeightedScore handles normal data, aspirational boost, missing 
     population_2011: 1_000_000,
     literacy_rate_2011: 85.0,
     aspirational_district: false,
-    tap_water_coverage_pct: 90,
-    pmgsy_road_connectivity_pct: 95,
-    sanitation_coverage_pct: 90,
+    nfhs5_electricity_pct: 95.0,
+    nfhs5_improved_water_pct: 90.0,
+    nfhs5_improved_sanitation_pct: 88.0,
+    pmgsy_road_connectivity_pct: null,
   };
   const deprivedDistrict = {
     state: "StateB",
@@ -144,9 +155,10 @@ test("computeNeedWeightedScore handles normal data, aspirational boost, missing 
     population_2011: 1_000_000,
     literacy_rate_2011: 55.0,
     aspirational_district: true,
-    tap_water_coverage_pct: 40,
-    pmgsy_road_connectivity_pct: 50,
-    sanitation_coverage_pct: 45,
+    nfhs5_electricity_pct: 60.0,
+    nfhs5_improved_water_pct: 45.0,
+    nfhs5_improved_sanitation_pct: 35.0,
+    pmgsy_road_connectivity_pct: null,
   };
 
   const baseScore = computeNeedWeightedScore({
@@ -170,6 +182,29 @@ test("computeNeedWeightedScore handles normal data, aspirational boost, missing 
     deprivedScore.needWeightedScore > baseScore.needWeightedScore,
     "Deprived district must receive a higher need-weighted priority score for equal complaint volume"
   );
+
+  // Partial NFHS-5 indicator averaging: verify that deficit is averaged strictly over available values
+  const partialDistrict = {
+    state: "StateC",
+    district: "PartialDist",
+    population_2011: 1_000_000,
+    literacy_rate_2011: 85.0,
+    aspirational_district: false,
+    nfhs5_electricity_pct: 90.0, // deficit = 0.10
+    nfhs5_improved_water_pct: 70.0, // deficit = 0.30
+    nfhs5_improved_sanitation_pct: null, // missing, should not dilute with 0
+    pmgsy_road_connectivity_pct: null,
+  };
+  const partialScore = computeNeedWeightedScore({
+    complaintCount: 10,
+    meanUrgency: 4,
+    meanUnresolvedAgeDays: 5,
+    districtRecord: partialDistrict,
+  });
+  // Average deficit of available = (0.10 + 0.30) / 2 = 0.20
+  // Expected deprivation = literacyDeficit (0.15 * 0.15) + infraDeficit (0.25 * 0.20) = 0.0225 + 0.05 = 0.0725
+  assert.equal(partialScore.hasInfraData, true);
+  assert.ok(Math.abs(partialScore.deprivationFactor - 0.0725) < 0.001);
 });
 
 test("joinAndScoreClusters re-ranks smaller/aspirational districts above high-population metros (Raw vs Need rank)", () => {

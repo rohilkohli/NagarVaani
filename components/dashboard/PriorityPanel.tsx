@@ -253,7 +253,7 @@ export default function PriorityPanel({
             </span>
           </div>
           <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-2 mt-1">
-            <span>Census 2011 + NITI Aayog joined • {lastUpdated}</span>
+            <span>Census 2011 + NFHS-5 + NITI Aayog joined • {lastUpdated}</span>
             <span>•</span>
             <button
               type="button"

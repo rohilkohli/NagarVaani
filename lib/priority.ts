@@ -65,7 +65,7 @@ export const PRIORITY_WEIGHTS: PriorityWeightsConfig = {
 export const PRIORITY_FORMULA_TOOLTIP =
   "Need-Weighted Score = (Complaints per 100k Pop) × Mean Urgency × (1 + Deprivation Factor) × Unresolved-Age Factor. " +
   "Deprivation Factor combines NITI Aayog Aspirational District status (+0.35), Census 2011 literacy deficit (×0.25), " +
-  "and verified infrastructure coverage gaps (×0.40). Unresolved-Age Factor adds +1.5% per day unresolved (capped at 60 days).";
+  "and verified NFHS-5 infrastructure coverage gaps (×0.40; electricity, improved drinking water, improved sanitation). Unresolved-Age Factor adds +1.5% per day unresolved (capped at 60 days).";
 
 export interface ScoreCalculationInput {
   complaintCount: number;
@@ -143,13 +143,14 @@ export function computeNeedWeightedScore(
   }
 
   const infraValues = [
-    rec?.tap_water_coverage_pct,
-    rec?.pmgsy_road_connectivity_pct,
-    rec?.sanitation_coverage_pct,
+    rec?.nfhs5_electricity_pct,
+    rec?.nfhs5_improved_water_pct,
+    rec?.nfhs5_improved_sanitation_pct,
   ].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
 
   const hasInfraData = infraValues.length > 0;
   if (hasInfraData) {
+    // Deprivation uses 100 minus each available NFHS-5 value; average only over available values
     const meanInfraDeficit =
       infraValues.reduce((acc, pct) => acc + (100 - clamp(pct, 0, 100)) / 100, 0) / infraValues.length;
     deprivation += weights.infraGapWeight * meanInfraDeficit;

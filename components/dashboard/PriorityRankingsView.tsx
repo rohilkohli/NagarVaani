@@ -280,7 +280,7 @@ Recommended Action: ${item.recommended_action}`;
               Municipal & National Investment Priorities
             </h1>
             <p className="text-[13px] sm:text-[14px] text-[var(--text-secondary)] leading-relaxed">
-              Combines citizen grievance clusters with published <strong>Census 2011</strong> district population &amp; literacy rates, <strong>NITI Aayog Aspirational District</strong> flags, and national scheme mappings (JJM, PMGSY, SBM).
+              Combines citizen grievance clusters with published <strong>Census 2011</strong> demographics, <strong>NFHS-5 (2019-21)</strong> district infrastructure indicators (electricity, improved water, improved sanitation), <strong>NITI Aayog Aspirational District</strong> flags, and national scheme mappings (JJM, PMGSY, SBM).
             </p>
           </div>
 
