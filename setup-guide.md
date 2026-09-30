@@ -249,10 +249,22 @@ META_APP_SECRET=demo-meta-secret npm exec tsx scripts/simulate-whatsapp.ts
 | `INTERNAL_JOB_KEY` | ❌ | required | Internal job dispatch auth |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | ❌ | required | Firebase Admin credentials |
 | `VITE_FIREBASE_*` | ❌ | required | Client Firebase config |
-| `VITE_GOOGLE_MAPS_API_KEY` | ❌ | optional | Maps heatmap |
+| `GOOGLE_MAPS_API_KEY` | optional | optional | Runtime Maps API key (injected via `/config.js`) |
+| `VITE_GOOGLE_MAPS_API_KEY` | optional | optional | Optional build-time Maps API key fallback |
 | `META_APP_SECRET` | ❌ | required for WhatsApp | Webhook signature |
 | `WHATSAPP_ACCESS_TOKEN` | ❌ | required for WhatsApp | Cloud API token |
 | `RETENTION_DAYS` | — | 365 | Retention policy (days) |
+
+### Google Maps runtime key & referrer restrictions
+
+1. In Google Cloud Console, enable **Maps JavaScript API**.
+2. Set website restrictions to `https://*.run.app/*`, `https://nagarvaani.com/*`, and `http://localhost:*/*`.
+3. In Cloud Run, update the runtime environment variable:
+   ```bash
+   gcloud run services update nagarvaani --region asia-south1 --update-env-vars GOOGLE_MAPS_API_KEY=<key>
+   ```
+4. Geocoding automatically uses `google.maps.Geocoder` from the JS API so HTTP referrer restrictions work seamlessly without `REQUEST_DENIED`. If no key is set, NagarVaani renders the non-map telemetry fallback.
+
 
 ---
 

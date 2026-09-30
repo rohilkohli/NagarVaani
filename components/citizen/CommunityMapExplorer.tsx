@@ -3,34 +3,28 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   GoogleMap,
-  useJsApiLoader,
   MarkerF,
   InfoWindowF,
 } from "@react-google-maps/api";
 import {
   MapPin,
   Compass,
-  Layers,
-  ZoomIn,
-  ZoomOut,
   ThumbsUp,
   ExternalLink,
   ArrowRight,
-  Sparkles,
-  Droplets,
-  Zap,
-  Trash2,
-  HeartPulse,
-  GraduationCap,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
   Maximize2,
   Minimize2,
+  AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
-import { Submission, ComplaintCategory } from "@/lib/types";
+import { Submission } from "@/lib/types";
 import { getLocationCoordinates } from "@/lib/locations";
+import {
+  useSharedGoogleMapsLoader,
+  URGENCY_COLORS,
+  CATEGORY_COLORS,
+  DARK_MAP_STYLES,
+} from "@/lib/mapsConfig";
 
 interface CommunityMapExplorerProps {
   submissions: Submission[];
@@ -42,61 +36,10 @@ interface CommunityMapExplorerProps {
   className?: string;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  roads: "#ef4444",
-  water: "#0284c7",
-  electricity: "#d97706",
-  sanitation: "#9333ea",
-  health: "#e11d48",
-  education: "#059669",
-  other: "#4f46e5",
-};
-
-const CATEGORY_ICONS: Record<string, any> = {
-  roads: Compass,
-  water: Droplets,
-  electricity: Zap,
-  sanitation: Trash2,
-  health: HeartPulse,
-  education: GraduationCap,
-  other: FileText,
-};
-
 const MAP_CONTAINER_STYLE = {
   width: "100%",
   height: "100%",
 };
-
-const DARK_MAP_STYLES = [
-  { elementType: "geometry", stylers: [{ color: "#161722" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#10111a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#9ca3af" }] },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#f3f4f6" }],
-  },
-  {
-    featureType: "administrative.country",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "rgba(99, 102, 241, 0.5)" }, { weight: 1.2 }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#252738" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1b1c28" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#0f121d" }],
-  },
-];
 
 export default function CommunityMapExplorer({
   submissions,
@@ -117,20 +60,33 @@ export default function CommunityMapExplorer({
     return getLocationCoordinates(selectedCountry);
   }, [selectedCountry]);
 
-  // Valid geo submissions
+  // Valid geo submissions with finite lat/lng
   const geoSubmissions = useMemo(() => {
     return submissions.filter(
-      (s) => typeof s.lat === "number" && typeof s.lng === "number" && s.lat !== 0 && s.lng !== 0
+      (s) =>
+        typeof s.lat === "number" &&
+        typeof s.lng === "number" &&
+        Number.isFinite(s.lat) &&
+        Number.isFinite(s.lng) &&
+        (s.lat !== 0 || s.lng !== 0) &&
+        (selectedCategory === "all" || s.category?.toLowerCase() === selectedCategory.toLowerCase())
     );
-  }, [submissions]);
+  }, [submissions, selectedCategory]);
 
-  // Google Maps API Key setup
-  const mapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+  // Top districts aggregation for fallback and stats
+  const topDistricts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const sub of geoSubmissions) {
+      const d = sub.district || sub.country || "General";
+      counts[d] = (counts[d] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [geoSubmissions]);
 
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: "nagarvaani-google-maps-script",
-    googleMapsApiKey: mapsKey,
-  });
+  // Single shared useJsApiLoader hook across NagarVaani
+  const { isLoaded, loadError, hasMapsKey } = useSharedGoogleMapsLoader();
 
   // Fit bounds or pan when country changes
   useEffect(() => {
@@ -213,19 +169,90 @@ export default function CommunityMapExplorer({
         </div>
       </div>
 
-      {/* Map Canvas */}
+      {/* Map Canvas / Non-Map Fallback */}
       <div className="relative flex-1 w-full bg-slate-900 overflow-hidden">
-        {!mapsKey ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center text-[var(--text-secondary)]">
-            <MapPin className="w-8 h-8 text-[var(--text-tertiary)]" />
-            <p className="font-semibold text-[var(--text-primary)]">Map unavailable in this environment</p>
-            <ul className="text-left text-[12px] space-y-1">
-              {geoSubmissions.slice(0, 5).map((submission) => (
-                <li key={submission.id}>• {submission.district || submission.country}: {submission.summary_english || submission.text}</li>
-              ))}
-            </ul>
+        {!hasMapsKey || loadError ? (
+          /* Non-Map Fallback: Table of top districts and plotted issues */
+          <div className="w-full h-full flex flex-col justify-between p-6 text-center text-[var(--text-secondary)] overflow-y-auto">
+            <div className="flex flex-col items-center gap-2 max-w-md mx-auto">
+              <div className="w-12 h-12 rounded-full bg-[var(--bg-surface)] border border-[var(--border-base)] flex items-center justify-center">
+                {loadError ? (
+                  <AlertCircle className="w-6 h-6 text-amber-500" />
+                ) : (
+                  <MapPin className="w-6 h-6 text-[var(--text-tertiary)]" />
+                )}
+              </div>
+              <h4 className="text-[16px] font-semibold text-[var(--text-primary)]">
+                {loadError ? "Map load error" : "Map unavailable: key missing or blocked"}
+              </h4>
+              <p className="text-[12px] text-[var(--text-tertiary)]">
+                {loadError
+                  ? (loadError.message || "Google Maps JS API failed to load.")
+                  : "Live map tiles require GOOGLE_MAPS_API_KEY. Community grievance records for this region remain listed below."}
+              </p>
+            </div>
+
+            {/* Top Districts Summary */}
+            {topDistricts.length > 0 && (
+              <div className="max-w-md w-full mx-auto my-3 bg-[var(--bg-surface)]/80 rounded-[10px] p-3 border border-[var(--border-dim)] text-left">
+                <div className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Top Districts in {selectedCountry}</span>
+                  <span>Open Issues</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {topDistricts.map(([dist, count]) => (
+                    <div key={dist} className="px-2 py-1 rounded bg-[var(--bg-elevated)] border border-[var(--border-dim)] flex items-center justify-between text-[11px] text-[var(--text-primary)]">
+                      <span className="truncate mr-1">• {dist}</span>
+                      <span className="font-mono text-[10px] px-1 rounded bg-[#6366f1]/20 text-[#6366f1] font-bold">
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Plotted Issues Table / List */}
+            <div className="max-w-xl w-full mx-auto text-left bg-[var(--bg-surface)] rounded-[10px] p-3 border border-[var(--border-dim)]">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>Recent Grievances</span>
+                <span>Urgency</span>
+              </div>
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                {geoSubmissions.slice(0, 5).map((sub) => (
+                  <div
+                    key={sub.id}
+                    onClick={() => setSelectedSubmission(sub)}
+                    className="p-1.5 rounded hover:bg-[var(--bg-elevated)] transition-colors flex items-center justify-between text-[12px] cursor-pointer"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <span className="font-semibold text-[var(--text-primary)] capitalize">
+                        {sub.category}
+                      </span>{" "}
+                      <span className="text-[var(--text-tertiary)]">({sub.district || sub.country})</span>:{" "}
+                      <span className="text-[var(--text-secondary)] truncate">
+                        {sub.summary_english || sub.text}
+                      </span>
+                    </div>
+                    <span
+                      className="px-2 py-0.5 rounded text-[10px] font-bold shrink-0"
+                      style={{
+                        backgroundColor: `${URGENCY_COLORS[sub.urgency] || "#ef4444"}20`,
+                        color: URGENCY_COLORS[sub.urgency] || "#ef4444",
+                      }}
+                    >
+                      U-{sub.urgency}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-[11px] text-[var(--text-tertiary)] pt-2">
+              Viewing {geoSubmissions.length} complaints across {selectedCountry}
+            </div>
           </div>
-        ) : isLoaded && !loadError ? (
+        ) : isLoaded ? (
           <GoogleMap
             mapContainerStyle={MAP_CONTAINER_STYLE}
             center={{ lat: countryCenter.lat, lng: countryCenter.lng }}
@@ -243,9 +270,9 @@ export default function CommunityMapExplorer({
               styles: mapType === "roadmap" ? DARK_MAP_STYLES : [],
             }}
           >
-            {/* Render all plotted citizen complaints */}
+            {/* Render all plotted citizen complaints colored by urgency */}
             {geoSubmissions.map((sub) => {
-              const catColor = CATEGORY_COLORS[sub.category] || "#6366f1";
+              const urgencyColor = URGENCY_COLORS[sub.urgency] || "#ef4444";
               const isSelected = selectedSubmission?.id === sub.id;
 
               return (
@@ -253,11 +280,11 @@ export default function CommunityMapExplorer({
                   key={sub.id}
                   position={{ lat: sub.lat, lng: sub.lng }}
                   onClick={() => setSelectedSubmission(sub)}
-                  title={`${sub.category.toUpperCase()} — ${sub.district || sub.country}`}
+                  title={`${sub.category.toUpperCase()} (U-${sub.urgency}) — ${sub.district || sub.country}`}
                   icon={{
                     path: google.maps.SymbolPath.CIRCLE,
                     scale: isSelected ? 8 : 6,
-                    fillColor: catColor,
+                    fillColor: urgencyColor,
                     fillOpacity: 0.95,
                     strokeWeight: isSelected ? 3 : 1.5,
                     strokeColor: "#ffffff",
@@ -266,7 +293,7 @@ export default function CommunityMapExplorer({
               );
             })}
 
-            {/* Selected Complaint Detailed Info Popup */}
+            {/* Selected Complaint Detailed Info Popup with Category, District, Urgency, Status */}
             {selectedSubmission && (
               <InfoWindowF
                 position={{ lat: selectedSubmission.lat, lng: selectedSubmission.lng }}
@@ -284,8 +311,14 @@ export default function CommunityMapExplorer({
                         {selectedSubmission.category}
                       </span>
                     </div>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">
-                      Priority U-{selectedSubmission.urgency}
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                      style={{
+                        backgroundColor: `${URGENCY_COLORS[selectedSubmission.urgency] || "#ef4444"}25`,
+                        color: URGENCY_COLORS[selectedSubmission.urgency] || "#ef4444",
+                      }}
+                    >
+                      Urgency: {selectedSubmission.urgency}/5
                     </span>
                   </div>
 
@@ -306,13 +339,15 @@ export default function CommunityMapExplorer({
                     </div>
                   )}
 
-                  {/* Location & Tracking ID */}
+                  {/* Location & Status */}
                   <div className="text-[11px] text-slate-600 mb-2 flex items-center justify-between border-t border-slate-100 pt-1.5">
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3 h-3 text-slate-400" />
                       <strong>{selectedSubmission.district || selectedSubmission.country}</strong>
                     </span>
-                    <span className="font-mono text-[10px] text-slate-500">{selectedSubmission.id}</span>
+                    <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 capitalize">
+                      {selectedSubmission.status || "classified"}
+                    </span>
                   </div>
 
                   {/* Action Buttons: Upvote & Track */}
@@ -323,21 +358,21 @@ export default function CommunityMapExplorer({
                       className={`flex-1 py-1 rounded-[6px] text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                         upvotedIds.has(selectedSubmission.id)
                           ? "bg-[#6366f1] text-white"
-                          : "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                          : "bg-slate-100 hover:bg-slate-200 text-slate-700"
                       }`}
                     >
                       <ThumbsUp className="w-3 h-3" />
-                      <span>{selectedSubmission.upvotes || 0} Upvote</span>
+                      <span>{upvotedIds.has(selectedSubmission.id) ? "Upvoted" : "Upvote"}</span>
                     </button>
 
                     {onNavigateToTrack && (
                       <button
                         type="button"
                         onClick={() => onNavigateToTrack(selectedSubmission.id)}
-                        className="px-2 py-1 rounded-[6px] bg-slate-800 hover:bg-slate-950 text-white text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                        className="py-1 px-2.5 rounded-[6px] bg-indigo-50 hover:bg-indigo-100 text-[#6366f1] text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <span>Track</span>
-                        <ArrowRight className="w-2.5 h-2.5" />
+                        <ArrowRight className="w-3 h-3" />
                       </button>
                     )}
                   </div>
@@ -345,56 +380,7 @@ export default function CommunityMapExplorer({
               </InfoWindowF>
             )}
           </GoogleMap>
-        ) : (
-          /* Fallback view if key loading */
-          <div className="relative w-full h-full flex items-center justify-center p-6 text-center text-white">
-            <div className="space-y-2">
-              <Compass className="w-8 h-8 text-[#6366f1] animate-spin mx-auto" />
-              <p className="text-[13px] text-slate-300">Initializing Real Interactive GIS Map...</p>
-            </div>
-          </div>
-        )}
-
-        {/* Floating Zoom Controls */}
-        <div className="absolute top-3 right-3 flex flex-col gap-1 z-20">
-          <button
-            type="button"
-            title="Zoom In"
-            onClick={() => {
-              if (mapRef.current) {
-                const cur = mapRef.current.getZoom() || 5;
-                mapRef.current.setZoom(cur + 1);
-              }
-            }}
-            className="w-8 h-8 rounded-[8px] bg-[var(--bg-surface)]/90 hover:bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-dim)] flex items-center justify-center shadow-sm cursor-pointer transition-colors backdrop-blur-xs"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            title="Zoom Out"
-            onClick={() => {
-              if (mapRef.current) {
-                const cur = mapRef.current.getZoom() || 5;
-                mapRef.current.setZoom(cur - 1);
-              }
-            }}
-            className="w-8 h-8 rounded-[8px] bg-[var(--bg-surface)]/90 hover:bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-dim)] flex items-center justify-center shadow-sm cursor-pointer transition-colors backdrop-blur-xs"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Legend Overlay at Bottom Left */}
-        <div className="absolute bottom-3 left-3 z-20 hidden sm:flex items-center gap-2 p-1.5 px-2.5 rounded-[8px] bg-slate-950/85 border border-slate-800 text-white text-[10px] backdrop-blur-xs shadow-md">
-          <span className="font-semibold text-slate-400">Legend:</span>
-          {Object.entries(CATEGORY_COLORS).slice(0, 5).map(([cat, color]) => (
-            <div key={cat} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-              <span className="capitalize text-slate-300">{cat}</span>
-            </div>
-          ))}
-        </div>
+        ) : null}
       </div>
     </div>
   );

@@ -84,7 +84,6 @@ export function validateRequiredEnv(
     'VITE_FIREBASE_STORAGE_BUCKET',
     'VITE_FIREBASE_MESSAGING_SENDER_ID',
     'VITE_FIREBASE_APP_ID',
-    'VITE_GOOGLE_MAPS_API_KEY',
   ];
 
   const isProduction = environment === 'production';
@@ -108,6 +107,18 @@ export function validateRequiredEnv(
     values[key] = sanitizeRequiredValue(env[key], key);
   }
 
+  // Google Maps API Key warning (warning only, not required in demo mode)
+  const hasMaps = Boolean(env.GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_API_KEY);
+  if (!hasMaps && !demoMode) {
+    console.warn("GOOGLE_MAPS_API_KEY (or VITE_GOOGLE_MAPS_API_KEY) is not set. Google Maps features will show graceful fallback state.");
+  }
+  if (env.GOOGLE_MAPS_API_KEY) {
+    values.GOOGLE_MAPS_API_KEY = env.GOOGLE_MAPS_API_KEY;
+  }
+  if (env.VITE_GOOGLE_MAPS_API_KEY) {
+    values.VITE_GOOGLE_MAPS_API_KEY = env.VITE_GOOGLE_MAPS_API_KEY;
+  }
+
   // Firebase Admin credentials: required only in live production (not demo)
   if (environment === 'production' && !demoMode) {
     if (!env.FIREBASE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) {
@@ -119,12 +130,14 @@ export function validateRequiredEnv(
 }
 
 export function getSafeEnvironment(env: Record<string, string | undefined> = process.env) {
+  const hasMapsKey = Boolean(env.GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_API_KEY);
   return {
     NODE_ENV: env.NODE_ENV || 'development',
     APP_MODE: env.APP_MODE || 'live',
     GEMINI_API_KEY: env.GEMINI_API_KEY ? 'configured' : 'missing',
     APP_URL: env.APP_URL || 'missing',
     VITE_FIREBASE_API_KEY: env.VITE_FIREBASE_API_KEY ? 'configured' : 'missing',
-    VITE_GOOGLE_MAPS_API_KEY: env.VITE_GOOGLE_MAPS_API_KEY ? 'configured' : 'missing',
+    GOOGLE_MAPS_API_KEY: hasMapsKey ? 'configured' : 'missing',
+    VITE_GOOGLE_MAPS_API_KEY: hasMapsKey ? 'configured' : 'missing',
   };
 }

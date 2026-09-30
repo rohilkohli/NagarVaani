@@ -111,7 +111,8 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
-VITE_GOOGLE_MAPS_API_KEY= # From Google Cloud Console
+GOOGLE_MAPS_API_KEY=      # Runtime Cloud Run env var (or local .env)
+VITE_GOOGLE_MAPS_API_KEY= # Optional build-time fallback
 ADMIN_SESSION_SECRET=      # Long random secret used only for short-lived staff sessions
 INTERNAL_JOB_KEY=          # Long random secret for internal asynchronous AI job dispatch
 GRAPH_API_VERSION=v23.0    # Meta Graph API version used by WhatsApp media and replies
@@ -122,6 +123,26 @@ WHATSAPP_ACCESS_TOKEN=    # Meta Cloud API System User Token
 WHATSAPP_WEBHOOK_VERIFY_TOKEN= # Set a private random verification token
 META_APP_SECRET=          # Meta App Secret
 ```
+
+### Google Maps API Key Setup & Cloud Run Runtime Injection
+
+Google Maps features (HeatmapLayer demand visualizer and Citizen GIS pinpoint map) use runtime key injection so keys are never baked into Docker images or public builds:
+
+1. **Create the Key**: In Google Cloud Console -> **APIs & Services** -> **Credentials**, create an API key and enable **Maps JavaScript API**.
+2. **Set HTTP Referrer Restrictions**:
+   - Under **Application restrictions**, choose **Websites**.
+   - Add authorized referrers:
+     - `https://<your-service>-<hash>.a.run.app/*`
+     - `https://nagarvaani.com/*`
+     - `http://localhost:*/*` (for local testing)
+   - *Client-Side Geocoding:* When HTTP referrer restrictions are active, direct REST calls to `maps.googleapis.com/maps/api/geocode/json` return `REQUEST_DENIED`. NagarVaani uses the client-side `google.maps.Geocoder` from the JS API, which inherits browser HTTP referrer authentication.
+3. **Inject at Runtime in Cloud Run**:
+   Update your deployed Cloud Run service without rebuilding:
+   ```bash
+   gcloud run services update nagarvaani --region asia-south1 --update-env-vars GOOGLE_MAPS_API_KEY=<key>
+   ```
+   The server injects this via dynamic `GET /config.js` (`window.__NV_CONFIG__`), consumed via `getMapsKey()` in `lib/mapsConfig.ts`. If no key is set or the key fails to load, a resilient non-map telemetry fallback is displayed.
+
 
 WhatsApp message idempotency is held in a bounded, 10,000-entry per-process LRU
 with a 24-hour TTL. It is per server instance; production deployments should

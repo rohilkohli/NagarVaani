@@ -30,10 +30,16 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: network first, cache fallback
 self.addEventListener('fetch', (event) => {
-  // Don't cache API calls or Firebase
-  if (event.request.url.includes('/api/') ||
-      event.request.url.includes('firestore') ||
-      event.request.url.includes('googleapis')) {
+  const url = new URL(event.request.url);
+
+  // Never cache runtime config, API endpoints, Firebase, or external Google services
+  if (
+    url.pathname === '/config.js' ||
+    url.pathname.startsWith('/api/') ||
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('firestore') ||
+    event.request.url.includes('googleapis')
+  ) {
     return;
   }
   

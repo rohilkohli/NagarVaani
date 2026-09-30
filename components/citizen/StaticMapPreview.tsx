@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import RealCitizenMap from './RealCitizenMap';
+import React, { lazy, Suspense } from 'react';
+
+const RealCitizenMap = lazy(() => import('./RealCitizenMap'));
 
 interface StaticMapPreviewProps {
   country: string;
@@ -17,5 +18,9 @@ interface StaticMapPreviewProps {
 }
 
 export default function StaticMapPreview(props: StaticMapPreviewProps) {
-  return <RealCitizenMap {...props} />;
+  return (
+    <Suspense fallback={<div className="w-full h-[220px] skeleton-shimmer rounded-[14px]" />}>
+      <RealCitizenMap {...props} />
+    </Suspense>
+  );
 }

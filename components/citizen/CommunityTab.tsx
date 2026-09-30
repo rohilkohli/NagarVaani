@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import {
   ThumbsUp,
   Filter,
@@ -31,7 +31,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import CommunityMapExplorer from "@/components/citizen/CommunityMapExplorer";
+const CommunityMapExplorer = lazy(() => import("@/components/citizen/CommunityMapExplorer"));
 import { isDemoMode } from "@/lib/appMode";
 
 interface CommunityTabProps {
@@ -402,14 +402,16 @@ export default function CommunityTab({
             </span>
           </div>
 
-          <CommunityMapExplorer
-            submissions={filteredSubmissions}
-            selectedCountry={selectedCountry}
-            selectedCategory={selectedCategory}
-            onUpvote={handleUpvote}
-            upvotedIds={upvotedIds}
-            onNavigateToTrack={onNavigateToTrack}
-          />
+          <Suspense fallback={<div className="h-[460px] sm:h-[520px] rounded-[16px] skeleton-shimmer" />}>
+            <CommunityMapExplorer
+              submissions={filteredSubmissions}
+              selectedCountry={selectedCountry}
+              selectedCategory={selectedCategory}
+              onUpvote={handleUpvote}
+              upvotedIds={upvotedIds}
+              onNavigateToTrack={onNavigateToTrack}
+            />
+          </Suspense>
         </div>
       ) : isLoading ? (
         <div className="py-16 text-center space-y-3 bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)]">

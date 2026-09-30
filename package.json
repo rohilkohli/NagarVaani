@@ -14,6 +14,8 @@
     "import:nfhs5": "tsx scripts/import-nfhs5.ts",
     "test": "tsx --test lib/*.test.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "smoke:pw": "tsx scripts/smoke-playwright.ts",
+    "test:e2e": "playwright test",
     "deploy": "bash deploy.sh",
     "docker:build": "docker build -t nagarvaani .",
     "docker:run": "docker run -p 3000:3000 --env-file .env nagarvaani",
@@ -59,10 +61,12 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"

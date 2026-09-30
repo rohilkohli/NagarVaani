@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, lazy, Suspense } from "react";
 import {
   UploadCloud,
   CheckCircle2,
@@ -32,8 +32,8 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { queueOfflineSubmission } from "@/lib/offlineQueue";
 import VoiceInput from "@/components/citizen/VoiceInput";
 import NearYouPanel from "@/components/citizen/NearYouPanel";
-import CommunityTab from "@/components/citizen/CommunityTab";
-import RealCitizenMap from "@/components/citizen/RealCitizenMap";
+const CommunityTab = lazy(() => import("@/components/citizen/CommunityTab"));
+const RealCitizenMap = lazy(() => import("@/components/citizen/RealCitizenMap"));
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import { useLanguage, SUPPORTED_LANGUAGES, LanguageCode } from "@/lib/languageContext";
 import { COUNTRIES_DATA, getStatesForCountry, getDistrictsForState, detectLocationFromGPS, getLocationCoordinates } from "@/lib/locations";
@@ -796,11 +796,13 @@ export default function CitizenPage({
       {/* ========================================================================= */}
       <main className="max-w-[600px] mx-auto px-4 sm:px-6 py-8 space-y-6">
         {citizenTab === "community" ? (
-          <CommunityTab
-            currentCountry={country}
-            onNavigateToReport={() => setCitizenTab("report")}
-            onNavigateToTrack={onNavigateToTrack}
-          />
+          <Suspense fallback={<div className="h-[460px] rounded-[16px] skeleton-shimmer" />}>
+            <CommunityTab
+              currentCountry={country}
+              onNavigateToReport={() => setCitizenTab("report")}
+              onNavigateToTrack={onNavigateToTrack}
+            />
+          </Suspense>
         ) : submissionSuccessId ? (
           <div className="bg-[var(--bg-surface)] rounded-[16px] border border-[var(--border-dim)] p-6 sm:p-8 text-center space-y-6 shadow-sm animate-in fade-in duration-300">
             {/* 7. SUBMISSION SUCCESS SELF-DRAWING SVG CHECKMARK */}
@@ -1154,26 +1156,28 @@ export default function CitizenPage({
 
                     {/* Quick Mode Real Interactive Map */}
                     <div className="pt-1">
-                      <RealCitizenMap
-                        country={country}
-                        state={state}
-                        district={district}
-                        landmark={quickLandmark}
-                        customCoords={detectedCoords}
-                        onCoordinatesChange={(coords) => setDetectedCoords(coords)}
-                        onDistrictDetected={(res) => {
-                          if (res.country) setCountry(res.country);
-                          if (res.state) setState(res.state);
-                          if (res.district) {
-                            setDistrict(res.district);
-                            setQuickLandmark(res.district);
-                          }
-                        }}
-                        isLocating={isLocating}
-                        onDetectLocation={handleDetectLocation}
-                        showNearbyReports={true}
-                        height="200px"
-                      />
+                      <Suspense fallback={<div className="h-[200px] rounded-[14px] skeleton-shimmer" />}>
+                        <RealCitizenMap
+                          country={country}
+                          state={state}
+                          district={district}
+                          landmark={quickLandmark}
+                          customCoords={detectedCoords}
+                          onCoordinatesChange={(coords) => setDetectedCoords(coords)}
+                          onDistrictDetected={(res) => {
+                            if (res.country) setCountry(res.country);
+                            if (res.state) setState(res.state);
+                            if (res.district) {
+                              setDistrict(res.district);
+                              setQuickLandmark(res.district);
+                            }
+                          }}
+                          isLocating={isLocating}
+                          onDetectLocation={handleDetectLocation}
+                          showNearbyReports={true}
+                          height="200px"
+                        />
+                      </Suspense>
                     </div>
                   </div>
 
@@ -1493,22 +1497,24 @@ export default function CitizenPage({
                           Click or drag red pin to exact location
                         </span>
                       </label>
-                      <RealCitizenMap
-                        country={country}
-                        state={state}
-                        district={district}
-                        customCoords={detectedCoords}
-                        onCoordinatesChange={(coords) => setDetectedCoords(coords)}
-                        onDistrictDetected={(res) => {
-                          if (res.country) setCountry(res.country);
-                          if (res.state) setState(res.state);
-                          if (res.district) setDistrict(res.district);
-                        }}
-                        isLocating={isLocating}
-                        onDetectLocation={handleDetectLocation}
-                        showNearbyReports={true}
-                        height="240px"
-                      />
+                      <Suspense fallback={<div className="h-[240px] rounded-[14px] skeleton-shimmer" />}>
+                        <RealCitizenMap
+                          country={country}
+                          state={state}
+                          district={district}
+                          customCoords={detectedCoords}
+                          onCoordinatesChange={(coords) => setDetectedCoords(coords)}
+                          onDistrictDetected={(res) => {
+                            if (res.country) setCountry(res.country);
+                            if (res.state) setState(res.state);
+                            if (res.district) setDistrict(res.district);
+                          }}
+                          isLocating={isLocating}
+                          onDetectLocation={handleDetectLocation}
+                          showNearbyReports={true}
+                          height="240px"
+                        />
+                      </Suspense>
                     </div>
                   </div>
                 </div>

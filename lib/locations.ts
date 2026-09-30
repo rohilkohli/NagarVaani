@@ -1,3 +1,5 @@
+import { getMapsKey } from "./mapsConfig";
+
 export interface CountryLocation {
   id: string;
   name: string;
@@ -694,58 +696,54 @@ export function findClosestLocation(userLat: number, userLng: number): { country
  * Detects user location via browser GPS coordinates, optionally calling Google Geocoding API if key is present.
  */
 export async function detectLocationFromGPS(lat: number, lng: number): Promise<DetectedLocationResult> {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-
-  if (apiKey) {
+  // Use client-side google.maps.Geocoder if loaded (avoids REQUEST_DENIED on referrer-restricted keys)
+  if (typeof window !== "undefined" && typeof google !== "undefined" && google.maps && google.maps.Geocoder) {
     try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === "OK" && data.results && data.results.length > 0) {
-          const first = data.results[0];
-          let foundCountry = "";
-          let foundState = "";
-          let foundDistrict = "";
+      const geocoder = new google.maps.Geocoder();
+      const response = await geocoder.geocode({ location: { lat, lng } });
+      const results = response.results;
+      if (results && results.length > 0) {
+        const first = results[0];
+        let foundCountry = "";
+        let foundState = "";
+        let foundDistrict = "";
 
-          for (const comp of first.address_components) {
-            if (comp.types.includes("country")) {
-              foundCountry = comp.long_name;
-            }
-            if (comp.types.includes("administrative_area_level_1")) {
-              foundState = comp.long_name;
-            }
-            if (
-              comp.types.includes("administrative_area_level_2") ||
-              comp.types.includes("administrative_area_level_3") ||
-              comp.types.includes("locality")
-            ) {
-              if (!foundDistrict) foundDistrict = comp.long_name;
-            }
+        for (const comp of first.address_components) {
+          if (comp.types.includes("country")) {
+            foundCountry = comp.long_name;
           }
+          if (comp.types.includes("administrative_area_level_1")) {
+            foundState = comp.long_name;
+          }
+          if (
+            comp.types.includes("administrative_area_level_2") ||
+            comp.types.includes("administrative_area_level_3") ||
+            comp.types.includes("locality")
+          ) {
+            if (!foundDistrict) foundDistrict = comp.long_name;
+          }
+        }
 
-          // Match found country to our BRICS countries if possible
-          const matchedCountry = COUNTRIES_DATA.find(
-            (c) => c.name.toLowerCase() === foundCountry.toLowerCase()
+        // Match found country to our BRICS countries if possible
+        const matchedCountry = COUNTRIES_DATA.find(
+          (c) => c.name.toLowerCase() === foundCountry.toLowerCase()
+        );
+
+        if (matchedCountry) {
+          // Find closest state in country
+          const matchedState = matchedCountry.states.find(
+            (s) => s.name.toLowerCase().includes(foundState.toLowerCase()) || foundState.toLowerCase().includes(s.name.toLowerCase())
           );
 
-          if (matchedCountry) {
-            // Find closest state in country
-            const matchedState = matchedCountry.states.find(
-              (s) => s.name.toLowerCase().includes(foundState.toLowerCase()) || foundState.toLowerCase().includes(s.name.toLowerCase())
-            );
-
-            return {
-              country: matchedCountry.name,
-              state: matchedState ? matchedState.name : (matchedCountry.states[0]?.name || ""),
-              district: foundDistrict || (matchedState?.districts[0] || ""),
-              lat,
-              lng,
-              formattedAddress: first.formatted_address,
-              source: "geocoding_api",
-            };
-          }
+          return {
+            country: matchedCountry.name,
+            state: matchedState ? matchedState.name : (matchedCountry.states[0]?.name || ""),
+            district: foundDistrict || (matchedState?.districts[0] || ""),
+            lat,
+            lng,
+            formattedAddress: first.formatted_address,
+            source: "geocoding_api",
+          };
         }
       }
     } catch {

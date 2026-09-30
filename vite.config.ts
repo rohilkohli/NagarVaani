@@ -19,6 +19,19 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     build: {
+      modulePreload: {
+        resolveDependencies: (filename, deps) => {
+          // Do not modulepreload vendor-maps or webgl for entry HTML so landing page does not download maps up front
+          return deps.filter(
+            (dep) =>
+              !dep.includes('vendor-maps') &&
+              !dep.includes('vendor-webgl') &&
+              !dep.includes('RealCitizenMap') &&
+              !dep.includes('DemandHeatmap') &&
+              !dep.includes('CommunityMapExplorer')
+          );
+        },
+      },
       // Warn when a chunk exceeds 500 kB (uncompressed)
       chunkSizeWarningLimit: 500,
       rollupOptions: {

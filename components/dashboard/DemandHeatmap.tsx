@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
-import { GoogleMapsOverlay } from "@deck.gl/google-maps";
-import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import { Map as MapIcon, Layers, Info } from "lucide-react";
+import { GoogleMap } from "@react-google-maps/api";
+import { Map as MapIcon, Layers, Info, Filter, AlertCircle } from "lucide-react";
 import { Submission } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { isDemoMode } from "@/lib/appMode";
+import { useSharedGoogleMapsLoader } from "@/lib/mapsConfig";
 
 interface DemandHeatmapProps {
   submissions?: Submission[];
@@ -108,6 +107,25 @@ const DARK_MAP_STYLES = [
   },
 ];
 
+// Lazy-loaded deck.gl promise cache to avoid downloading deck.gl before map is ready
+let deckGlModulesPromise: Promise<{
+  GoogleMapsOverlay: any;
+  HeatmapLayer: any;
+}> | null = null;
+
+function loadDeckGl() {
+  if (!deckGlModulesPromise) {
+    deckGlModulesPromise = Promise.all([
+      import("@deck.gl/google-maps"),
+      import("@deck.gl/aggregation-layers"),
+    ]).then(([googleMapsMod, aggLayersMod]) => ({
+      GoogleMapsOverlay: googleMapsMod.GoogleMapsOverlay,
+      HeatmapLayer: aggLayersMod.HeatmapLayer,
+    }));
+  }
+  return deckGlModulesPromise;
+}
+
 export default function DemandHeatmap({
   submissions: initialSubmissions = [],
   selectedCategory,
@@ -128,11 +146,10 @@ export default function DemandHeatmap({
 
   const [realtimeSubmissions, setRealtimeSubmissions] = useState<Submission[]>([]);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const deckOverlayRef = useRef<GoogleMapsOverlay | null>(null);
+  const deckOverlayRef = useRef<any | null>(null);
 
-  // Check if Maps API key exists
-  const mapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
-  const hasMapsKey = Boolean(mapsKey && mapsKey.length > 10);
+  // Single shared useJsApiLoader hook across NagarVaani
+  const { isLoaded, loadError, hasMapsKey } = useSharedGoogleMapsLoader();
 
   useEffect(() => {
     if (isDemoMode()) {
@@ -176,7 +193,7 @@ export default function DemandHeatmap({
           }
         }
       );
-    } catch (e) {
+    } catch {
       if (initialSubmissions.length > 0) {
         setRealtimeSubmissions(initialSubmissions);
       }
@@ -201,55 +218,75 @@ export default function DemandHeatmap({
     );
   }, [realtimeSubmissions, initialSubmissions, categoryFilter]);
 
-  const { isLoaded } = useJsApiLoader({
-    id: "nagarvaani-google-maps-script",
-    googleMapsApiKey: hasMapsKey ? mapsKey : "",
-  });
-
-  const updateDeckOverlay = useCallback(() => {
-    if (!deckOverlayRef.current) return;
-
-    const layer = new HeatmapLayer({
-      id: "demand-heatmap-layer",
-      data: filteredSubmissions,
-      getPosition: (d: Submission) => [d.lng, d.lat],
-      getWeight: (d: Submission) => d.urgency || 1,
-      radiusPixels: 60,
-      intensity: 3,
-      threshold: 0.05,
-      colorRange: HEATMAP_COLOR_RANGE,
-      pickable: false,
-    });
-
-    deckOverlayRef.current.setProps({
-      layers: [layer],
-    });
+  // Keep heatmap points valid (finite lat/lng within bounds)
+  const validSubmissions = useMemo(() => {
+    return filteredSubmissions.filter(
+      (s) =>
+        typeof s.lat === "number" &&
+        Number.isFinite(s.lat) &&
+        typeof s.lng === "number" &&
+        Number.isFinite(s.lng) &&
+        s.lat >= -90 &&
+        s.lat <= 90 &&
+        s.lng >= -180 &&
+        s.lng <= 180 &&
+        (s.lat !== 0 || s.lng !== 0)
+    );
   }, [filteredSubmissions]);
 
+  const updateDeckOverlay = useCallback(async () => {
+    if (!deckOverlayRef.current) return;
+    try {
+      const { HeatmapLayer } = await loadDeckGl();
+      const layer = new HeatmapLayer({
+        id: "demand-heatmap-layer",
+        data: validSubmissions,
+        getPosition: (d: Submission) => [d.lng, d.lat],
+        getWeight: (d: Submission) => d.urgency || 1,
+        radiusPixels: 60,
+        intensity: 3,
+        threshold: 0.05,
+        colorRange: HEATMAP_COLOR_RANGE,
+        pickable: false,
+      });
+
+      deckOverlayRef.current.setProps({
+        layers: [layer],
+      });
+    } catch (err) {
+      console.warn("Failed to update deck.gl overlay layers:", err);
+    }
+  }, [validSubmissions]);
+
   useEffect(() => {
-    if (hasMapsKey && isLoaded) {
+    if (hasMapsKey && isLoaded && !loadError) {
       updateDeckOverlay();
     }
-  }, [updateDeckOverlay, hasMapsKey, isLoaded]);
+  }, [updateDeckOverlay, hasMapsKey, isLoaded, loadError]);
 
   const onMapLoad = useCallback(
-    (map: google.maps.Map) => {
+    async (map: google.maps.Map) => {
       mapRef.current = map;
-      if (!deckOverlayRef.current) {
-        const overlay = new GoogleMapsOverlay({
-          layers: [],
-        });
-        overlay.setMap(map);
-        deckOverlayRef.current = overlay;
+      try {
+        const { GoogleMapsOverlay } = await loadDeckGl();
+        if (!deckOverlayRef.current) {
+          const overlay = new GoogleMapsOverlay({
+            layers: [],
+          });
+          overlay.setMap(map);
+          deckOverlayRef.current = overlay;
+        }
+        updateDeckOverlay();
+      } catch (err) {
+        console.warn("Failed to initialize deck.gl overlay on map load:", err);
       }
-      updateDeckOverlay();
     },
     [updateDeckOverlay]
   );
 
   // Group submissions by lat/lng quadrant into a 10×10 grid of cells for no-key fallback
   const gridCells = useMemo(() => {
-    const source = filteredSubmissions.length > 0 ? filteredSubmissions : initialSubmissions;
+    const source = validSubmissions.length > 0 ? validSubmissions : filteredSubmissions;
     const grid: {
       count: number;
       categoryCounts: Record<string, number>;
@@ -312,7 +349,19 @@ export default function DemandHeatmap({
     }
 
     return grid;
-  }, [filteredSubmissions, initialSubmissions]);
+  }, [validSubmissions, filteredSubmissions]);
+
+  // Top districts extracted for fallback view
+  const topDistricts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const sub of filteredSubmissions) {
+      const d = sub.district || sub.country || "Unknown";
+      counts[d] = (counts[d] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [filteredSubmissions]);
 
   return (
     <div
@@ -326,6 +375,9 @@ export default function DemandHeatmap({
           <h3 className="text-[15px] font-semibold text-[var(--text-primary)] tracking-tight">
             Demand Heatmap
           </h3>
+          <span className="hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded-full bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] font-medium">
+            {validSubmissions.length} hotspots
+          </span>
         </div>
 
         {/* Filter Pills */}
@@ -351,7 +403,7 @@ export default function DemandHeatmap({
       </div>
 
       {/* MAP / FALLBACK CONTAINER */}
-      {hasMapsKey && isLoaded ? (
+      {hasMapsKey && isLoaded && !loadError ? (
         <div className="relative w-full h-[456px] bg-[var(--bg-base)] overflow-hidden rounded-b-[var(--radius-md)] heatmap-enter">
           {isLoading && initialSubmissions.length === 0 ? (
             <div className="w-full h-full skeleton-shimmer" />
@@ -371,9 +423,48 @@ export default function DemandHeatmap({
               onLoad={onMapLoad}
             />
           )}
+
+          {/* Floating Live Heatmap Legend & Category Indicator */}
+          <div className="absolute bottom-3 left-3 z-10 p-2.5 rounded-[10px] bg-slate-950/85 backdrop-blur-md border border-slate-800/80 shadow-xl max-w-[260px] text-white select-none">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-[11px] font-semibold tracking-tight text-slate-200 flex items-center gap-1">
+                <Filter className="w-3 h-3 text-[#6366f1]" />
+                <span className="capitalize">{categoryFilter} Demand</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 font-medium">
+                {validSubmissions.length} pts
+              </span>
+            </div>
+
+            {/* Gradient Intensity Bar */}
+            <div className="space-y-1">
+              <div
+                className="h-2 w-full rounded-full"
+                style={{
+                  background: "linear-gradient(to right, #6366f1, #38bdf8, #fbbf24, #f97316, #ef4444)",
+                }}
+              />
+              <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                <span>Low Demand</span>
+                <span>Critical Mass</span>
+              </div>
+            </div>
+
+            {/* Category dot indicators if filtering all */}
+            {categoryFilter === "all" && (
+              <div className="mt-2 pt-1.5 border-t border-slate-800/70 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-300">
+                {Object.entries(CATEGORY_COLORS).slice(0, 4).map(([cat, color]) => (
+                  <span key={cat} className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="capitalize text-[10px]">{cat}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
-        /* STEP 2: STYLED 500PX FALLBACK WHEN NO MAPS KEY */
+        /* NON-MAP FALLBACK CONTAINER: NEVER A BLANK CARD */
         <div
           className="relative w-full min-h-[500px] h-[500px] flex flex-col justify-between p-6 select-none overflow-hidden"
           style={{
@@ -385,21 +476,41 @@ export default function DemandHeatmap({
           {/* Header info in center top */}
           <div className="flex flex-col items-center text-center space-y-1.5 z-10">
             <div className="w-12 h-12 rounded-full bg-[var(--bg-base)] border border-[var(--border-base)] flex items-center justify-center shadow-inner mb-1">
-              <MapIcon className="w-6 h-6 text-[var(--text-tertiary)]" style={{ width: 40, height: 40 }} />
+              {loadError ? (
+                <AlertCircle className="w-6 h-6 text-amber-500" />
+              ) : (
+                <MapIcon className="w-6 h-6 text-[var(--text-tertiary)]" />
+              )}
             </div>
             <h3 className="text-[17px] font-semibold text-[var(--text-primary)] tracking-tight">
-              Map unavailable in this environment
+              {loadError ? "Map load error" : "Map unavailable: key missing or blocked"}
             </h3>
             <p className="text-[13px] text-[var(--text-tertiary)] max-w-md font-normal">
-              Static demand data remains available below.
+              {loadError
+                ? `Google Maps API script failed to initialize (${loadError.message || "Network or policy error"}). Geospatial telemetry is displayed below.`
+                : "Live interactive map tiles require GOOGLE_MAPS_API_KEY. District telemetry and report density are displayed below."}
             </p>
           </div>
 
-          <ul className="mx-auto w-full max-w-md space-y-1 text-[12px] text-[var(--text-secondary)] z-10">
-            {filteredSubmissions.slice(0, 5).map((submission) => (
-              <li key={submission.id}>• {submission.district || submission.country}: {submission.summary_english || submission.text}</li>
-            ))}
-          </ul>
+          {/* Top Districts Table / Pills */}
+          {topDistricts.length > 0 && (
+            <div className="mx-auto w-full max-w-md z-10 bg-[var(--bg-base)]/60 rounded-[8px] p-2.5 border border-[var(--border-dim)]">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span>Top Demand Clusters ({categoryFilter})</span>
+                <span>Reports</span>
+              </div>
+              <div className="space-y-1">
+                {topDistricts.map(([district, count]) => (
+                  <div key={district} className="flex items-center justify-between text-[12px] text-[var(--text-primary)]">
+                    <span className="font-medium">• {district}</span>
+                    <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-[var(--brand-primary)]/15 text-[var(--brand-primary)]">
+                      {count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 10x10 Dot Grid Visualizer */}
           <div className="my-auto py-2 flex flex-col items-center justify-center z-10">

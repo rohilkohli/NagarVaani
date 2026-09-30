@@ -187,25 +187,34 @@ async function startServer() {
           scriptSrc: [
             "'self'",
             "'unsafe-inline'",
-            "maps.googleapis.com",
-            "*.firebaseapp.com",
+            "https://maps.googleapis.com",
+            "https://maps.gstatic.com",
+            "blob:",
           ],
-          styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           imgSrc: [
             "'self'",
             "data:",
-            "*.googleapis.com",
-            "firebasestorage.googleapis.com",
-            "maps.gstatic.com",
+            "blob:",
+            "https://*.googleapis.com",
+            "https://*.gstatic.com",
+            "https://*.google.com",
+            "https://*.ggpht.com",
+            "https://*.googleusercontent.com",
+            "https://firebasestorage.googleapis.com",
           ],
           connectSrc: [
             "'self'",
-            "*.googleapis.com",
-            "*.firebaseio.com",
-            "*.google-analytics.com",
-            "generativelanguage.googleapis.com",
+            "https://*.googleapis.com",
+            "https://*.google.com",
+            "https://*.gstatic.com",
+            "https://generativelanguage.googleapis.com",
+            "data:",
+            "blob:",
           ],
-          fontSrc: ["'self'", "fonts.gstatic.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+          workerSrc: ["'self'", "blob:"],
+          frameSrc: ["'self'", "https://*.google.com"],
         },
       },
     })
@@ -2041,6 +2050,14 @@ Return this exact JSON structure:
     if (res.headersSent) return next(error);
     const status = error?.type === "entity.too.large" ? 413 : Number(error?.status) || 500;
     return res.status(status).json({ success: false, error: status === 413 ? "Request body is too large." : "Request failed." });
+  });
+
+  // Runtime client configuration (injected at runtime via Cloud Run env var)
+  app.get("/config.js", (_req, res) => {
+    const mapsKey = (process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || "").trim();
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.send(`window.__NV_CONFIG__ = ${JSON.stringify({ mapsKey })};`);
   });
 
   // Vite middleware for development

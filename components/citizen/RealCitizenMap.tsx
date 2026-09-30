@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   GoogleMap,
-  useJsApiLoader,
   MarkerF,
   InfoWindowF,
   CircleF,
@@ -11,13 +10,11 @@ import {
 import {
   MapPin,
   Compass,
-  Layers,
   ZoomIn,
   ZoomOut,
   Crosshair,
   Maximize2,
   Minimize2,
-  Info,
   Droplets,
   Zap,
   Trash2,
@@ -26,18 +23,24 @@ import {
   FileText,
   AlertTriangle,
   Eye,
-  CheckCircle2,
-  Navigation,
-  Sparkles,
   ExternalLink,
   Loader2,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { getLocationCoordinates, LocationCoordinates, detectLocationFromGPS } from "@/lib/locations";
 import { useLanguage } from "@/lib/languageContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
+import { collection, query, limit, onSnapshot } from "firebase/firestore";
 import { isDemoMode } from "@/lib/appMode";
+import { ALL_SEED_SUBMISSIONS } from "@/lib/seedData";
+import {
+  useSharedGoogleMapsLoader,
+  URGENCY_COLORS,
+  CATEGORY_COLORS,
+  DARK_MAP_STYLES,
+} from "@/lib/mapsConfig";
 
 interface RealCitizenMapProps {
   country: string;
@@ -54,16 +57,6 @@ interface RealCitizenMapProps {
   height?: string;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  roads: "#ef4444",
-  water: "#0284c7",
-  electricity: "#d97706",
-  sanitation: "#9333ea",
-  health: "#e11d48",
-  education: "#059669",
-  other: "#4f46e5",
-};
-
 const CATEGORY_ICONS: Record<string, any> = {
   roads: Compass,
   water: Droplets,
@@ -79,58 +72,6 @@ const MAP_CONTAINER_STYLE = {
   height: "100%",
 };
 
-// Clean styling for dark & light mode
-const DARK_MAP_STYLES = [
-  { elementType: "geometry", stylers: [{ color: "#171822" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#10111a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#9ca3af" }] },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#f3f4f6" }],
-  },
-  {
-    featureType: "administrative.country",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "rgba(99, 102, 241, 0.4)" }, { weight: 1.2 }],
-  },
-  {
-    featureType: "administrative.province",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "rgba(255, 255, 255, 0.15)" }, { weight: 0.8 }],
-  },
-  {
-    featureType: "poi",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#6b7280" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#252738" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1b1c28" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#373b54" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#0f121d" }],
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#64748b" }],
-  },
-];
-
 export default function RealCitizenMap({
   country,
   state,
@@ -139,20 +80,26 @@ export default function RealCitizenMap({
   customCoords,
   onCoordinatesChange,
   onDistrictDetected,
-  isLocating,
+  isLocating: parentIsLocating,
   onDetectLocation,
   showNearbyReports = true,
   className = "",
   height = "220px",
 }: RealCitizenMapProps) {
   const { t } = useLanguage();
-  const [mapType, setMapType] = useState<"roadmap" | "satellite" | "hybrid">("roadmap");
+  const [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showNearbyPins, setShowNearbyPins] = useState<boolean>(true);
   const [selectedReport, setSelectedReport] = useState<Submission | null>(null);
   const [nearbySubmissions, setNearbySubmissions] = useState<Submission[]>([]);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState<boolean>(false);
+  const [userGpsPosition, setUserGpsPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isGpsLocating, setIsGpsLocating] = useState<boolean>(false);
   const mapRef = useRef<google.maps.Map | null>(null);
+
+  // Single shared useJsApiLoader hook across NagarVaani
+  const { isLoaded, loadError, hasMapsKey } = useSharedGoogleMapsLoader();
 
   // Derived current coordinates
   const locationInfo: LocationCoordinates = useMemo(() => {
@@ -175,14 +122,6 @@ export default function RealCitizenMap({
     };
   }, [customCoords, locationInfo]);
 
-  // Google Maps API Key setup
-  const mapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: "nagarvaani-google-maps-script",
-    googleMapsApiKey: mapsKey,
-  });
-
   // Pan map when active coordinates change
   useEffect(() => {
     if (mapRef.current && activePosition.lat && activePosition.lng) {
@@ -193,14 +132,40 @@ export default function RealCitizenMap({
     }
   }, [activePosition]);
 
-  // Fetch nearby reports from Firestore (live mode only)
+  // Load nearby reports (seeded in demo mode, Firestore in live mode)
   useEffect(() => {
     if (isDemoMode()) {
+      // Filter seeded submissions with valid coordinates
+      const validSeeds: Submission[] = ALL_SEED_SUBMISSIONS.filter(
+        (s) =>
+          typeof s.lat === "number" &&
+          typeof s.lng === "number" &&
+          Number.isFinite(s.lat) &&
+          Number.isFinite(s.lng) &&
+          (s.lat !== 0 || s.lng !== 0)
+      );
+
+      // Match country or find nearest seeded reports
+      const matched = validSeeds.filter((s) => {
+        if (!s.country) return true;
+        return s.country.toLowerCase() === country.toLowerCase();
+      });
+
+      const list = matched.length > 0 ? matched : validSeeds;
+      // Sort by Euclidean distance to activePosition
+      const sorted = [...list].sort((a, b) => {
+        const distA = Math.hypot(a.lat - activePosition.lat, a.lng - activePosition.lng);
+        const distB = Math.hypot(b.lat - activePosition.lat, b.lng - activePosition.lng);
+        return distA - distB;
+      });
+
+      setNearbySubmissions(sorted.slice(0, 30));
       return;
     }
+
     let unsubscribe = () => {};
     try {
-      const q = query(collection(db, "submissions"), limit(30));
+      const q = query(collection(db, "submissions"), limit(40));
       unsubscribe = onSnapshot(
         q,
         (snapshot) => {
@@ -224,12 +189,12 @@ export default function RealCitizenMap({
                 status: d.status || "classified",
               };
             });
-            // Filter reports close to active region or matching country
             const filtered = list.filter(
               (r) =>
                 r.lat &&
                 r.lng &&
-                r.lat !== 0 &&
+                Number.isFinite(r.lat) &&
+                Number.isFinite(r.lng) &&
                 (r.country.toLowerCase() === country.toLowerCase() ||
                   (district && r.district.toLowerCase() === district.toLowerCase()))
             );
@@ -242,7 +207,77 @@ export default function RealCitizenMap({
       // Fallback gracefully
     }
     return () => unsubscribe();
-  }, [country, district]);
+  }, [country, district, activePosition.lat, activePosition.lng]);
+
+  // Request user GPS position with clear permission handling
+  const handleRequestGps = useCallback(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setPermissionError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setIsGpsLocating(true);
+    setPermissionError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        setIsGpsLocating(false);
+        const { latitude, longitude } = position.coords;
+        const coords = { lat: latitude, lng: longitude };
+        setUserGpsPosition(coords);
+
+        if (onCoordinatesChange) {
+          onCoordinatesChange(coords);
+        }
+
+        if (mapRef.current) {
+          mapRef.current.panTo(coords);
+          mapRef.current.setZoom(15);
+        }
+
+        // Also call parent handler if provided
+        if (onDetectLocation) {
+          onDetectLocation();
+        }
+
+        // Reverse geocode to auto-detect district/locality
+        if (onDistrictDetected) {
+          setIsReverseGeocoding(true);
+          try {
+            const detected = await detectLocationFromGPS(latitude, longitude);
+            if (detected) {
+              onDistrictDetected({
+                country: detected.country,
+                state: detected.state,
+                district: detected.district,
+              });
+            }
+          } catch {
+            // Ignored
+          } finally {
+            setIsReverseGeocoding(false);
+          }
+        }
+      },
+      (err) => {
+        setIsGpsLocating(false);
+        if (err.code === 1) {
+          setPermissionError("Location permission denied. Please enable location access in your browser or drag the marker to position manually.");
+        } else if (err.code === 2) {
+          setPermissionError("GPS location unavailable. Please select your position on the map or pick manually.");
+        } else if (err.code === 3) {
+          setPermissionError("GPS location request timed out. Please try again.");
+        } else {
+          setPermissionError("Could not retrieve current location. Please select manually.");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  }, [onCoordinatesChange, onDetectLocation, onDistrictDetected]);
 
   // Handle map click to drop/move pin
   const handleMapClick = useCallback(
@@ -255,7 +290,6 @@ export default function RealCitizenMap({
         onCoordinatesChange({ lat: newLat, lng: newLng });
       }
 
-      // Reverse geocode to auto-detect district/locality
       if (onDistrictDetected) {
         setIsReverseGeocoding(true);
         try {
@@ -317,6 +351,8 @@ export default function RealCitizenMap({
     return `https://www.google.com/maps/search/?api=1&query=${activePosition.lat},${activePosition.lng}`;
   }, [activePosition]);
 
+  const locating = isGpsLocating || parentIsLocating;
+
   return (
     <div
       id="citizen-real-map-container"
@@ -338,7 +374,7 @@ export default function RealCitizenMap({
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono font-medium shrink-0 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>{t("interactiveGis", "Live Real Map")}</span>
+              <span>{hasMapsKey ? t("interactiveGis", "Live Real Map") : "Offline Reference"}</span>
             </span>
             {isReverseGeocoding && (
               <span className="text-[10px] text-[#6366f1] animate-pulse flex items-center gap-1">
@@ -349,7 +385,7 @@ export default function RealCitizenMap({
           </div>
         </div>
 
-        {/* Right Action Tools: Map Type Toggle, Nearby Toggle, Fullscreen */}
+        {/* Right Action Tools */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Map / Satellite Toggle */}
           <div className="flex items-center gap-0.5 bg-[var(--bg-elevated)] p-0.5 rounded-[7px] border border-[var(--border-dim)]">
@@ -406,6 +442,23 @@ export default function RealCitizenMap({
         </div>
       </div>
 
+      {/* Permission Denied / Error Alert Banner */}
+      {permissionError && (
+        <div className="px-3 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-200 text-[11px] flex items-center justify-between gap-2 z-20">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>{permissionError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPermissionError(null)}
+            className="text-amber-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Real Interactive Map Canvas */}
       <div
         className={`relative w-full ${
@@ -413,18 +466,64 @@ export default function RealCitizenMap({
         }`}
         style={{ height: isFullscreen ? "100%" : height }}
       >
-        {!mapsKey ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[var(--bg-elevated)] p-5 text-center">
-            <MapPin className="w-8 h-8 text-[var(--text-tertiary)]" />
-            <div>
-              <p className="font-semibold text-[var(--text-primary)]">Map unavailable in this environment</p>
-              <p className="mt-1 text-[12px] text-[var(--text-secondary)]">Location can still be selected from the static reference list.</p>
+        {!hasMapsKey || loadError ? (
+          /* Non-Map Fallback: Never a blank card */
+          <div className="w-full h-full flex flex-col justify-between p-4 bg-[var(--bg-elevated)] text-center overflow-y-auto">
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <div className="w-10 h-10 rounded-full bg-[var(--bg-surface)] border border-[var(--border-base)] flex items-center justify-center">
+                {loadError ? (
+                  <AlertCircle className="w-5 h-5 text-amber-500" />
+                ) : (
+                  <MapPin className="w-5 h-5 text-[var(--text-tertiary)]" />
+                )}
+              </div>
+              <div>
+                <p className="font-semibold text-[13px] text-[var(--text-primary)]">
+                  {loadError ? "Map load error" : "Map unavailable: key missing or blocked"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[var(--text-secondary)]">
+                  {loadError
+                    ? (loadError.message || "Google Maps script could not be loaded. Location coordinates can still be selected manually.")
+                    : "Add GOOGLE_MAPS_API_KEY to enable live map tiles. Coordinates and nearby incident reports remain active."}
+                </p>
+              </div>
             </div>
-            <ul className="text-left text-[12px] text-[var(--text-secondary)] space-y-1">
-              {[district, state, country].filter(Boolean).map((place) => <li key={place}>• {place}</li>)}
-            </ul>
+
+            {/* Selected Coordinates Chip */}
+            <div className="my-2 py-1 px-3 rounded-[6px] bg-[var(--bg-base)] border border-[var(--border-dim)] mx-auto font-mono text-[11px] text-[#6366f1] inline-flex items-center gap-1.5">
+              <MapPin className="w-3 h-3 text-red-400" />
+              <span>
+                {activePosition.lat.toFixed(4)}°, {activePosition.lng.toFixed(4)}° ({district || state || country})
+              </span>
+            </div>
+
+            {/* Nearby Reports Table / List */}
+            {nearbySubmissions.length > 0 && (
+              <div className="text-left w-full max-w-sm mx-auto bg-[var(--bg-surface)] rounded-[8px] p-2 border border-[var(--border-dim)]">
+                <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Nearby Seeded Reports</span>
+                  <span>Urgency</span>
+                </div>
+                <div className="space-y-1 max-h-[85px] overflow-y-auto pr-1">
+                  {nearbySubmissions.slice(0, 4).map((sub) => (
+                    <div key={sub.id} className="flex items-center justify-between text-[11px] text-[var(--text-primary)]">
+                      <span className="truncate pr-2">• {sub.district || sub.country}: {sub.summary_english || sub.text}</span>
+                      <span
+                        className="px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0"
+                        style={{
+                          backgroundColor: `${URGENCY_COLORS[sub.urgency] || "#ef4444"}22`,
+                          color: URGENCY_COLORS[sub.urgency] || "#ef4444",
+                        }}
+                      >
+                        U-{sub.urgency}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        ) : isLoaded && !loadError ? (
+        ) : isLoaded ? (
           <GoogleMap
             mapContainerStyle={MAP_CONTAINER_STYLE}
             center={activePosition}
@@ -443,7 +542,7 @@ export default function RealCitizenMap({
               styles: mapType === "roadmap" ? DARK_MAP_STYLES : [],
             }}
           >
-            {/* Primary Incident Draggable Marker */}
+            {/* Primary Incident Draggable Marker (Target complaint position) */}
             <MarkerF
               position={activePosition}
               draggable={true}
@@ -460,7 +559,7 @@ export default function RealCitizenMap({
               }}
             />
 
-            {/* Jurisdiction circle radius around target marker */}
+            {/* Jurisdiction radius circle */}
             <CircleF
               center={activePosition}
               radius={350}
@@ -473,10 +572,40 @@ export default function RealCitizenMap({
               }}
             />
 
-            {/* Nearby Submissions Markers */}
+            {/* User GPS Position Indicator (Distinct blue dot / accuracy ring) */}
+            {userGpsPosition && (
+              <>
+                <MarkerF
+                  position={userGpsPosition}
+                  title="Your Current GPS Position"
+                  icon={{
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 6,
+                    fillColor: "#3b82f6",
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#ffffff",
+                  }}
+                />
+                <CircleF
+                  center={userGpsPosition}
+                  radius={80}
+                  options={{
+                    fillColor: "#3b82f6",
+                    fillOpacity: 0.15,
+                    strokeColor: "#3b82f6",
+                    strokeOpacity: 0.5,
+                    strokeWeight: 1,
+                  }}
+                />
+              </>
+            )}
+
+            {/* Nearby Submissions Markers Colored By Urgency */}
             {showNearbyPins &&
               nearbySubmissions.map((item) => {
-                const catColor = CATEGORY_COLORS[item.category] || "#6366f1";
+                const urgencyColor = URGENCY_COLORS[item.urgency] || "#ef4444";
+                const isSelected = selectedReport?.id === item.id;
                 return (
                   <MarkerF
                     key={item.id}
@@ -484,89 +613,64 @@ export default function RealCitizenMap({
                     onClick={() => setSelectedReport(item)}
                     icon={{
                       path: google.maps.SymbolPath.CIRCLE,
-                      scale: 5,
-                      fillColor: catColor,
-                      fillOpacity: 0.9,
-                      strokeWeight: 1.5,
+                      scale: isSelected ? 7 : 5,
+                      fillColor: urgencyColor,
+                      fillOpacity: 0.95,
+                      strokeWeight: isSelected ? 2.5 : 1.5,
                       strokeColor: "#ffffff",
                     }}
                   />
                 );
               })}
 
-            {/* InfoWindow for selected nearby report */}
+            {/* InfoWindow for selected nearby report with Category, District, Urgency, Status */}
             {selectedReport && (
               <InfoWindowF
                 position={{ lat: selectedReport.lat, lng: selectedReport.lng }}
                 onCloseClick={() => setSelectedReport(null)}
               >
-                <div className="p-1 max-w-[210px] text-slate-900 font-sans">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: CATEGORY_COLORS[selectedReport.category] || "#6366f1" }}
-                    />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                <div className="p-1 max-w-[220px] text-slate-900 font-sans">
+                  {/* Category and Urgency badge */}
+                  <div className="flex items-center justify-between gap-1.5 mb-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
                       {selectedReport.category}
                     </span>
-                    <span className="ml-auto text-[9px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-bold">
-                      U-{selectedReport.urgency}
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded font-bold"
+                      style={{
+                        backgroundColor: `${URGENCY_COLORS[selectedReport.urgency] || "#ef4444"}25`,
+                        color: URGENCY_COLORS[selectedReport.urgency] || "#ef4444",
+                      }}
+                    >
+                      Urgency: {selectedReport.urgency}/5
                     </span>
                   </div>
+
+                  {/* Summary / description */}
                   <p className="text-[12px] line-clamp-2 font-medium text-slate-900 leading-snug">
                     {selectedReport.summary_english || selectedReport.text}
                   </p>
-                  <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-200 pt-1">
-                    <span>{selectedReport.district || selectedReport.country}</span>
-                    <span className="font-mono">{selectedReport.id}</span>
+
+                  {/* District & Status */}
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-200 pt-1.5">
+                    <span className="font-semibold text-slate-700 truncate pr-1">
+                      {selectedReport.district || selectedReport.country}
+                    </span>
+                    <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-600 capitalize">
+                      {selectedReport.status || "classified"}
+                    </span>
                   </div>
                 </div>
               </InfoWindowF>
             )}
           </GoogleMap>
         ) : (
-          /* High-Precision Interactive Leaflet/Slippy Fallback if Google Maps API Key is Loading or Offline */
-          <div className="relative w-full h-full bg-slate-900 overflow-hidden select-none flex items-center justify-center">
-            <div
-              className="absolute inset-0 opacity-25 pointer-events-none"
-              style={{
-                backgroundImage: `radial-gradient(#6366f1 1px, transparent 1px), linear-gradient(to right, rgba(99, 102, 241, 0.1) 1px, transparent 1px), linear-gradient(to bottom, rgba(99, 102, 241, 0.1) 1px, transparent 1px)`,
-                backgroundSize: "28px 28px, 56px 56px, 56px 56px",
-              }}
-            />
-
-            {/* Simulated Live Geographic Contours */}
-            <svg className="absolute inset-0 w-full h-full opacity-30 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="50%" cy="50%" r="70" fill="none" stroke="#6366f1" strokeWidth="1" strokeDasharray="3,3" />
-              <circle cx="50%" cy="50%" r="130" fill="none" stroke="#6366f1" strokeWidth="0.8" strokeDasharray="4,4" />
-              <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#6366f1" strokeWidth="0.6" strokeOpacity="0.4" />
-              <line x1="50%" y1="0" x2="50%" y2="100%" stroke="#6366f1" strokeWidth="0.6" strokeOpacity="0.4" />
-            </svg>
-
-            {/* Center Geographic Pin */}
-            <div className="relative z-10 flex flex-col items-center justify-center">
-              <div className="relative flex items-center justify-center">
-                <div className="absolute w-12 h-12 rounded-full bg-red-500/25 animate-ping" />
-                <div className="w-8 h-8 rounded-full bg-red-600 border-2 border-white text-white flex items-center justify-center shadow-lg">
-                  <MapPin className="w-4 h-4 fill-white" />
-                </div>
-              </div>
-              <div className="mt-1 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-slate-700 text-[11px] font-semibold text-white tracking-tight shadow-md">
-                {district || state || country}
-              </div>
-            </div>
-
-            {/* Click to reposition notice */}
-            <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-[6px] bg-slate-950/80 border border-slate-700/60 backdrop-blur-xs text-white text-[11px] font-mono">
-              <span>
-                {activePosition.lat >= 0 ? `${activePosition.lat.toFixed(4)}° N` : `${Math.abs(activePosition.lat).toFixed(4)}° S`},{" "}
-                {activePosition.lng >= 0 ? `${activePosition.lng.toFixed(4)}° E` : `${Math.abs(activePosition.lng).toFixed(4)}° W`}
-              </span>
-            </div>
+          <div className="w-full h-full flex items-center justify-center bg-slate-900">
+            <Loader2 className="w-6 h-6 text-[#6366f1] animate-spin" />
           </div>
         )}
 
-        {/* Floating Controls Overlay (Zoom In, Zoom Out, Recenter to GPS) */}
+        {/* Floating Controls Overlay (Zoom In, Zoom Out, GPS Fly-to) */}
         <div className="absolute top-2 right-2 flex flex-col gap-1 z-20">
           <button
             type="button"
@@ -594,17 +698,15 @@ export default function RealCitizenMap({
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          {onDetectLocation && (
-            <button
-              type="button"
-              title="Fly to My GPS Location"
-              disabled={isLocating}
-              onClick={onDetectLocation}
-              className="w-7 h-7 rounded-[6px] bg-[#6366f1]/15 hover:bg-[#6366f1]/30 text-[#6366f1] border border-[#6366f1]/30 flex items-center justify-center shadow-xs cursor-pointer transition-colors backdrop-blur-xs disabled:opacity-50"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <button
+            type="button"
+            title="Detect My GPS Location"
+            disabled={locating}
+            onClick={handleRequestGps}
+            className="w-7 h-7 rounded-[6px] bg-[#6366f1]/15 hover:bg-[#6366f1]/30 text-[#6366f1] border border-[#6366f1]/30 flex items-center justify-center shadow-xs cursor-pointer transition-colors backdrop-blur-xs disabled:opacity-50"
+          >
+            {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
         {/* Interactive Instruction Pill (Bottom Left) */}
@@ -637,17 +739,15 @@ export default function RealCitizenMap({
           </span>
         </div>
 
-        {onDetectLocation && (
-          <button
-            type="button"
-            onClick={onDetectLocation}
-            disabled={isLocating}
-            className="text-[11px] font-semibold text-[#6366f1] hover:text-[#4f46e5] flex items-center gap-1 cursor-pointer transition-colors shrink-0 disabled:opacity-50"
-          >
-            <Crosshair className="w-3 h-3" />
-            <span>{isLocating ? t("locatingGps", "Locating...") : t("recenterGps", "Recenter to GPS")}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleRequestGps}
+          disabled={locating}
+          className="text-[11px] font-semibold text-[#6366f1] hover:text-[#4f46e5] flex items-center gap-1 cursor-pointer transition-colors shrink-0 disabled:opacity-50"
+        >
+          {locating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
+          <span>{locating ? t("locatingGps", "Locating...") : t("recenterGps", "Recenter to GPS")}</span>
+        </button>
       </div>
     </div>
   );
