@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useMemo, lazy, Suspense } from "react";
+import BrandMark from "@/components/shared/BrandMark";
 import {
   UploadCloud,
   CheckCircle2,
@@ -692,9 +693,7 @@ export default function CitizenPage({
         <div className="max-w-[600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
           {/* Logo Left */}
           <div className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-[8px] bg-[#6366f1] flex items-center justify-center text-white shadow-2xs">
-              <span className="text-[13px] font-bold">N</span>
-            </div>
+            <BrandMark size={28} className="shrink-0" />
             <span className="text-[15px] font-bold tracking-tight text-[var(--text-primary)] hidden xs:inline">
               NagarVaani
             </span>

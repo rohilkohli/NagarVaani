@@ -1,4 +1,11 @@
-# NagarVaani 🏛️
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/nagarvaani-logo-dark.svg">
+    <img alt="NagarVaani" src="public/brand/nagarvaani-logo-light.svg" width="460">
+  </picture>
+</p>
+
+<p align="center"><b>Every citizen's voice. Every city's priority.</b></p>
 
 [![CI](https://github.com/rohilkohli/NagarVaani/actions/workflows/ci.yml/badge.svg)](https://github.com/rohilkohli/NagarVaani/actions/workflows/ci.yml)
 

@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LockKeyhole, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import BrandMark from './BrandMark';
 
 const STAFF_ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
 
@@ -89,9 +90,7 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg-base)] px-4">
       <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--border-base)] bg-[var(--bg-surface)] p-6 shadow-2xl">
         <div className="mb-5 flex items-center gap-3">
-          <div className="rounded-full bg-[var(--brand-primary)]/12 p-2 text-[var(--brand-primary)]">
-            <LockKeyhole className="h-5 w-5" />
-          </div>
+          <BrandMark size={40} className="shrink-0" />
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Restricted access</p>
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">Dashboard access</h2>

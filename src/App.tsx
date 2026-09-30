@@ -10,6 +10,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { useTheme } from "@/lib/themeContext";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { getRuntimeMode, isDemoMode } from "@/lib/appMode";
+import BrandMark from "@/components/shared/BrandMark";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage.tsx"));
 const CitizenPage = lazy(() => import("./pages/CitizenPage.tsx"));
@@ -355,8 +356,15 @@ export default function App() {
 
         {/* Logo */}
         <div className="text-center">
-          <div className="text-5xl mb-3">🏛️</div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">NagarVaani</h1>
+          <img
+            src="/brand/nagarvaani-logo-dark.svg"
+            alt=""
+            width={460}
+            height={138}
+            className="mx-auto h-28 sm:h-32 w-auto select-none"
+            draggable={false}
+          />
+          <h1 className="sr-only">NagarVaani</h1>
           <p className="mt-2 text-[var(--text-secondary)] text-[15px] max-w-sm mx-auto">
             Multilingual AI civic infrastructure platform — solving for India, with BRICS extension
           </p>
@@ -570,6 +578,7 @@ export default function App() {
         <footer className="border-t border-[var(--border-dim)] bg-[var(--bg-subtle)] py-3 px-6 text-center text-[12px] text-[var(--text-tertiary)]">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap justify-center">
+              <BrandMark size={14} className="shrink-0" />
               <span className="font-semibold text-[var(--text-secondary)]">NagarVaani</span>
               <span>•</span>
               <span>Multilingual AI Infrastructure Intelligence for BRICS Nations</span>

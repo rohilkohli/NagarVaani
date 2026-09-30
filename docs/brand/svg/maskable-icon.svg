@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
 <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>
-<rect width="512" height="512" rx="112" fill="url(#g)"/>
-<g transform="translate(256 256) scale(1.0) translate(-256 -270)">
+<rect width="512" height="512" rx="0" fill="url(#g)"/>
+<g transform="translate(256 256) scale(0.7) translate(-256 -270)">
 <path d="M168 104H344A72 72 0 0 1 416 176V280A72 72 0 0 1 344 352H250L150 436L188 352H168A72 72 0 0 1 96 280V176A72 72 0 0 1 168 104Z" fill="#fff"/>
 <path d="M126 320V268A6 6 0 0 1 132 262H164A6 6 0 0 1 170 268V320ZM176 320V232A6 6 0 0 1 182 226H214A6 6 0 0 1 220 232V320ZM226 320V204A6 6 0 0 1 232 198H280A6 6 0 0 1 286 204V320ZM292 320V242A6 6 0 0 1 298 236H330A6 6 0 0 1 336 242V320ZM342 320V278A6 6 0 0 1 348 272H382A6 6 0 0 1 388 278V320Z" fill="url(#g)"/><path d="M253 158H259V204H253Z" fill="url(#g)"/><path d="M136 280h8v10h-8ZM152 280h8v10h-8ZM186 244h8v10h-8ZM202 244h8v10h-8ZM186 268h8v10h-8ZM202 268h8v10h-8ZM186 292h8v10h-8ZM202 292h8v10h-8ZM244 216h8v10h-8ZM260 216h8v10h-8ZM244 240h8v10h-8ZM260 240h8v10h-8ZM244 264h8v10h-8ZM260 264h8v10h-8ZM244 288h8v10h-8ZM260 288h8v10h-8ZM302 254h8v10h-8ZM318 254h8v10h-8ZM302 278h8v10h-8ZM318 278h8v10h-8ZM353 290h8v10h-8ZM369 290h8v10h-8Z" fill="#fff"/><path d="M228.8 162.7A30 30 0 0 1 228.8 137.3M208.9 172.0A52 52 0 0 1 208.9 128.0M283.2 137.3A30 30 0 0 1 283.2 162.7M303.1 128.0A52 52 0 0 1 303.1 172.0" fill="none" stroke="url(#g)" stroke-width="10" stroke-linecap="round"/><circle cx="256" cy="150" r="11" fill="#F59E0B"/>
 </g></svg>

@@ -1,8 +1,11 @@
-const CACHE_NAME = 'nagarvaani-v2';
+const CACHE_NAME = 'nagarvaani-v3';
 const STATIC_ASSETS = [
   '/',
   '/citizen',
   '/manifest.json',
+  '/favicon.svg',
+  '/icon-192.png',
+  '/brand/nagarvaani-logo-dark.svg',
 ];
 
 // Install: cache static assets

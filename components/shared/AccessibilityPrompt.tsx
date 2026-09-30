@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import BrandMark from "./BrandMark";
 
 type AccessibilityPreferences = {
   acknowledged: boolean;
@@ -69,6 +70,7 @@ export default function AccessibilityPrompt() {
         aria-labelledby="accessibility-prompt-title"
         aria-describedby="accessibility-prompt-description"
       >
+        <BrandMark size={44} className="mb-3" />
         <p className="accessibility-prompt-eyebrow">Welcome to NagarVaani</p>
         <h1 id="accessibility-prompt-title">Would you like accessibility support?</h1>
         <p id="accessibility-prompt-description">

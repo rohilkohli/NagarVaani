@@ -1,6 +1,7 @@
 'use client';
 
 import React from "react";
+import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
 import { useLanguage } from "@/lib/languageContext";
 import {
@@ -53,9 +54,7 @@ export default function Sidebar({
       <div className="flex flex-col">
         {/* Logo area (top, 52px height, aligned with header) */}
         <div className="h-[52px] px-4 flex items-center gap-2.5 border-b border-[var(--border-dim)]">
-          <div className="w-6 h-6 min-w-[24px] rounded-[5px] bg-[var(--brand-primary)] flex items-center justify-center text-white shadow-xs">
-            <span className="text-[12px] font-bold leading-none">N</span>
-          </div>
+          <BrandMark size={24} className="shrink-0" />
           <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
             NagarVaani
           </span>
