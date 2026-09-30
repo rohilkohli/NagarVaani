@@ -1,11 +1,14 @@
 # NagarVaani 🏛️
+
+[![CI](https://github.com/rohilkohli/NagarVaani/actions/workflows/ci.yml/badge.svg)](https://github.com/rohilkohli/NagarVaani/actions/workflows/ci.yml)
+
 ### Multilingual AI Platform for Citizen Infrastructure Intelligence
 
 > Built for **Build with AI: Code for Communities — Second Edition** (Google Cloud × Hack2Skill)  
 > **Track 1: AI for Digital Public Infrastructure & Governance** | BRICS Theme: Innovation
 
-NagarVaani aggregates citizen infrastructure complaints via voice, text, and photo across 
-BRICS nations, uses Gemini 3.7 Flash to classify and prioritise them, and surfaces 
+NagarVaani aggregates citizen infrastructure complaints via voice, text, and photo across
+India’s linguistic regions, uses Gemini 2.5 Flash to classify and prioritise them, and surfaces
 actionable recommendations to policymakers on a real-time dashboard.
 
 ---
@@ -23,7 +26,7 @@ non-digitised intake systems with no AI triage layer.
 ## Our Solution
 A scalable Digital Public Good that:
 - Accepts citizen complaints in **any language** via voice, text, or photo
-- Uses **Gemini 3.7 Flash** to classify, translate, and score urgency in real time
+- Uses **Gemini 2.5 Flash** to classify, translate, and score urgency in real time
 - Aggregates into a **geospatial heatmap** showing demand hotspots
 - Generates **AI-ranked priority recommendations** for policymakers
 - Demonstrates **BRICS cross-border applicability** in a dedicated comparison view
@@ -35,7 +38,7 @@ A scalable Digital Public Good that:
 |---|---|
 | Frontend | React 19 + Vite + TypeScript |
 | Styling | Tailwind CSS v4 |
-| AI Engine | Gemini 3.7 Flash (`@google/genai`) |
+| AI Engine | Gemini 2.5 Flash (`@google/genai`) |
 | Backend | Express + Vite SSR (`server.ts`) |
 | Database | Firebase Firestore (real-time) |
 | Storage | Firebase Storage (photo uploads) |
@@ -195,35 +198,52 @@ Update APP_URL in Cloud Run env vars to that URL.
 
 | Criterion | Weight | How We Address It |
 |---|---|---|
-| AI/Technical Execution | 25% | Gemini 3.7 Flash for classification, transcription, prioritisation |
+| AI/Technical Execution | 25% | Gemini 2.5 Flash for classification, transcription, prioritisation |
 | Problem-Solution Fit | 20% | Directly solves Track 1 challenge statement |
-| Cross-Border Applicability | 20% | Live BRICS comparison view, 5-nation seed data |
-| Deployability & Scalability | 20% | Cloud Run deployment, Firebase real-time, no infra changes per nation |
-| Impact Potential | 10% | 3.6B BRICS citizens, government policymaker-ready output |
-| Presentation & Clarity | 5% | Live demo, seed data pre-loaded |
+| Depth & Reach Across India | 20% | 22-language support, state-level geospatial heatmap, demo seed data per region |
+| Deployability & Scalability | 20% | Cloud Run + Firebase real-time; no infra changes per region |
+| Impact Potential | 15% | Policymaker-ready output surfacing demand hotspots |
 
 ---
 
-## Project Structure
+## Source Layout
+
+The repo uses a **split layout** kept intentionally as-is to preserve Vite/Express independence:
 
 ```
-├── app/
-│   ├── citizen/page.tsx         # Citizen complaint portal (warm light UI)
-│   ├── dashboard/page.tsx       # Policymaker dashboard (dark bento UI)
-│   └── api/                     # classify / prioritize / transcribe / seed
+NagarVaani/
+├── server.ts              # Express API + Vite SSR middleware (all server routes live here)
+├── lib/                   # Server-only modules (Gemini, Firebase Admin, classify, transcribe …)
+├── components/            # React UI components (citizen/, dashboard/, shared/, ui/)
+├── src/                   # Vite entry point (App.tsx, main.tsx, index.css, pages/)
+│   └── lib/firebase.ts    # Client-side Firebase SDK init (kept separate from Admin SDK)
+├── scripts/               # Dev tooling (check-env, check-model, smoke, simulate-whatsapp)
+├── public/                # Static assets served by Vite
+├── assets/                # Build-time assets (icons, images)
+└── .github/workflows/     # CI (lint → test → build → smoke)
+```
+
+> **Why not move everything under `src/`?**  
+> `lib/` is consumed by both `server.ts` (Node/ESM) and the test runner (`node --test lib/*.test.ts`).  
+> Moving it under `src/` would require updating every `../lib/` import in `server.ts` and the `@` alias path in `tsconfig.json` — a mechanical but high-blast-radius change deferred until there is a clear need.
+
+## Project Structure (legacy — kept for reference)
+
+```
 ├── components/
 │   ├── citizen/VoiceInput.tsx   # Mic recording + Gemini transcription
 │   └── dashboard/
-│       ├── StatsPanel.tsx       # 4 stat cards + category breakdown + trend
-│       ├── DemandHeatmap.tsx    # Google Maps + deck.gl HeatmapLayer
-│       ├── PriorityPanel.tsx    # AI priority sidebar widget
+│       ├── StatsPanel.tsx        # 4 stat cards + category breakdown + trend
+│       ├── DemandHeatmap.tsx     # Google Maps + deck.gl HeatmapLayer
+│       ├── PriorityPanel.tsx     # AI priority sidebar widget
 │       ├── PriorityRankingsView.tsx  # Full AI priorities page
-│       └── BRICSComparison.tsx  # Cross-border comparison table
+│       └── BRICSComparison.tsx   # Cross-border comparison table
 ├── lib/
-│   ├── types.ts                 # Submission + PriorityRecommendation interfaces
-│   ├── seedData.ts              # 60 realistic submissions across 5 BRICS nations
-│   └── firebase.ts              # Firestore + Storage init
-└── server.ts                    # Express API server (Gemini calls live here)
+│   ├── types.ts               # Submission + PriorityRecommendation interfaces
+│   ├── classify.ts            # Gemini + rule-based classifier
+│   ├── seedData.ts            # 60 realistic submissions across India
+│   └── firebase.ts            # Firestore + Storage init
+└── server.ts                  # Express API server (Gemini calls live here)
 ```
 
 ---

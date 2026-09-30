@@ -1,9 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 export const KNOWN_GOOD_GEMINI_MODEL = "gemini-2.5-flash";
 
 let aiClient: GoogleGenAI | null = null;
+
 let resolvedModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
 
 export function getGeminiModelName(): string {
