@@ -37,11 +37,8 @@ export default defineConfig(() => {
           manualChunks(id: string) {
             // ── Vendor chunks ────────────────────────────────────────────
             // Luma.gl WebGL core engine
-            if (id.includes('@luma.gl')) {
-              return 'vendor-webgl';
-            }
-            // Google Maps + deck.gl + math.gl/loaders.gl — loaded lazily with DemandHeatmap
             if (
+              id.includes('@luma.gl') ||
               id.includes('@deck.gl') ||
               id.includes('@math.gl') ||
               id.includes('@loaders.gl') ||
