@@ -19,7 +19,7 @@ as the theme and BRICS applicability as an extension.
 | | |
 |---|---|
 | **Live demo** | https://nagarvaani-636001394004.asia-south1.run.app (no login, sandbox data) |
-| **Demo video** | [Watch the demo](VIDEO_URL_HERE) |
+| **Demo video** | [Watch the demo](https://youtu.be/Nn1F67GYW2E) |
 | **Submission notes** | [docs/SUBMISSION.md](docs/SUBMISSION.md) |
 
 ---
