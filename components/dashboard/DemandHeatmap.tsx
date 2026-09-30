@@ -130,10 +130,7 @@ export default function DemandHeatmap({
   const deckOverlayRef = useRef<GoogleMapsOverlay | null>(null);
 
   // Check if Maps API key exists
-  const mapsKey =
-    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
-    (typeof window !== "undefined" && ((window as any).__ENV?.VITE_GOOGLE_MAPS_API_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY || (window as any).NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)) ||
-    "AIzaSyDeh5qMcJgn5Rlxs0oYT8PCFKvICz7YoI0";
+  const mapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
   const hasMapsKey = Boolean(mapsKey && mapsKey.length > 10);
 
   useEffect(() => {
@@ -386,12 +383,18 @@ export default function DemandHeatmap({
               <MapIcon className="w-6 h-6 text-[var(--text-tertiary)]" style={{ width: 40, height: 40 }} />
             </div>
             <h3 className="text-[17px] font-semibold text-[var(--text-primary)] tracking-tight">
-              Demand Heatmap
+              Map unavailable in this environment
             </h3>
             <p className="text-[13px] text-[var(--text-tertiary)] max-w-md font-normal">
-              Add <code className="px-1.5 py-0.5 rounded-[4px] bg-[var(--bg-base)] border border-[var(--border-dim)] text-[var(--brand-secondary)] font-mono text-[12px]">VITE_GOOGLE_MAPS_API_KEY</code> to enable the live map
+              Static demand data remains available below.
             </p>
           </div>
+
+          <ul className="mx-auto w-full max-w-md space-y-1 text-[12px] text-[var(--text-secondary)] z-10">
+            {filteredSubmissions.slice(0, 5).map((submission) => (
+              <li key={submission.id}>• {submission.district || submission.country}: {submission.summary_english || submission.text}</li>
+            ))}
+          </ul>
 
           {/* 10x10 Dot Grid Visualizer */}
           <div className="my-auto py-2 flex flex-col items-center justify-center z-10">

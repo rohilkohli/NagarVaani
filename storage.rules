@@ -4,8 +4,9 @@ service firebase.storage {
     match /complaints/{fileName} {
       // Anyone can read complaint photos (for community display)
       allow read: if true;
-      // Anyone can upload but enforce size and type limits
+      // Server-side Firebase Admin uploads bypass client rules. Client uploads require auth.
       allow write: if 
+        request.auth != null &&
         request.resource.size < 5 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
     }

@@ -17,6 +17,11 @@ import { ALL_SEED_SUBMISSIONS } from "./lib/seedData";
 import { getMetrics, incrementMetric, logStructured, redactPii, requestId } from "./lib/observability";
 import { scoreDuplicate } from "./lib/duplicate";
 import { getRetentionCutoff, isOlderThanRetention } from "./lib/retention";
+import { canSkipWebhookSignature, claimWhatsAppMessage, detectedLanguageReply, downloadWhatsAppMedia, graphApiVersion, isLiveEnvironment, runClassificationJob, verifyMetaSignature } from "./lib/whatsapp";
+import { transcribeAudio } from "./lib/transcribe";
+import { validateClassifyPayload, validateComplaintPayload, validatePrioritizePayload } from "./lib/validation";
+import { getGeminiModelName, initializeGeminiModel } from "./lib/gemini";
+import { parseGeminiClassification, ruleBasedClassify } from "./lib/classify";
 
 async function findLikelyDuplicate(
   firestore: Firestore,
@@ -49,6 +54,46 @@ async function findLikelyDuplicate(
     }
   }
   return best;
+}
+
+async function downloadVisionImage(urlValue: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  const url = new URL(urlValue);
+  const host = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("Vision image must use HTTPS.");
+  if (!(host === "firebasestorage.googleapis.com" || host === "storage.googleapis.com" || host.endsWith(".firebasestorage.app"))) {
+    throw new Error("Vision image host is not allowed.");
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Vision image returned HTTP ${response.status}.`);
+    const mimeType = String(response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
+    if (!new Set(["image/jpeg", "image/png"]).has(mimeType)) throw new Error("Vision image content type is not allowed.");
+    const maxBytes = 16 * 1024 * 1024;
+    if (Number(response.headers.get("content-length") || 0) > maxBytes) throw new Error("Vision image exceeds the 16 MB limit.");
+    if (!response.body) throw new Error("Vision image response has no body.");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel("image too large");
+          throw new Error("Vision image exceeds the 16 MB limit.");
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return { buffer: Buffer.concat(chunks), mimeType };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 dotenv.config();
@@ -88,10 +133,33 @@ if (environment === "production" && !envConfig.GEMINI_API_KEY) {
   throw new Error("Missing required production env: GEMINI_API_KEY");
 }
 
+if (isLiveEnvironment(environment, process.env.APP_MODE || process.env.VITE_APP_MODE) && !process.env.META_APP_SECRET) {
+  logStructured("error", "whatsapp_signature_secret_missing", { message: "META_APP_SECRET is required for live WhatsApp webhooks." });
+}
+
 async function startServer() {
+  await initializeGeminiModel();
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
   const idempotentSubmissions = new Map<string, { createdAt: number; response: Record<string, unknown> }>();
+
+  async function triggerClassificationJob(submissionId: string): Promise<boolean> {
+    const url = `http://localhost:${PORT}/api/classify`;
+    let attempts = 0;
+    return runClassificationJob(url, submissionId, process.env.INTERNAL_JOB_KEY, async (input, init) => {
+      attempts += 1;
+      const response = await fetch(input, init);
+      if (!response.ok) throw new Error(`classification returned HTTP ${response.status}`);
+      return response;
+    }, async () => {
+      logStructured("error", "classification_job_failed", { submissionId, attempts });
+      try {
+        await getAdminFirestore().collection("submissions").doc(submissionId).update({ status: "classification_failed" });
+      } catch (error) {
+        logStructured("error", "classification_failure_status_update_failed", { submissionId, error: String(error) });
+      }
+    });
+  }
 
   // Security headers
   app.use(
@@ -134,7 +202,7 @@ async function startServer() {
           ? [process.env.APP_URL || "", "https://nagarvaani.com"]
           : "*",
       methods: ["GET", "POST", "PATCH"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "X-Internal-Job-Key", "X-Hub-Signature-256"],
     })
   );
 
@@ -158,8 +226,15 @@ async function startServer() {
   });
   app.use("/api/submit", submitLimiter);
   app.use("/api/classify", submitLimiter);
+  app.use("/api/submissions", rateLimit({ windowMs: 60 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { success: false, error: "Submission rate limit exceeded." } }));
+  app.use("/api/prioritize", rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { success: false, error: "Prioritization rate limit exceeded." } }));
 
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({
+    limit: "10mb",
+    verify: (req, _res, buffer) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+    },
+  }));
 
   app.use((req, res, next) => {
     const id = requestId(String(req.headers["x-request-id"] || ""));
@@ -420,6 +495,8 @@ async function startServer() {
 
   app.post("/api/submissions", async (req, res) => {
     const payload = req.body || {};
+    const validatedPayload = validateComplaintPayload(payload);
+    if (!validatedPayload.isValid) return res.status(400).json({ success: false, error: "Invalid complaint payload.", details: validatedPayload.errors });
     const text = String(payload.text || "").trim();
     const category = String(payload.category || "other");
     const country = String(payload.country || "India").trim();
@@ -668,25 +745,55 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/submissions/:submissionId/reclassify", async (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid || !session.payload) {
+      return res.status(401).json({ success: false, error: "A valid staff session is required." });
+    }
+    if (session.payload.role !== "operator") {
+      return res.status(403).json({ success: false, error: "Operator role required." });
+    }
+    try {
+      const firestore = getAdminFirestore();
+      const submissionRef = firestore.collection("submissions").doc(req.params.submissionId);
+      const snapshot = await submissionRef.get();
+      if (!snapshot.exists) return res.status(404).json({ success: false, error: "Complaint not found." });
+      await submissionRef.update({ status: "pending", classification_retry_at: new Date().toISOString() });
+      void triggerClassificationJob(req.params.submissionId);
+      return res.status(202).json({ success: true, status: "pending" });
+    } catch (error) {
+      logStructured("error", "classification_retry_failed", { submissionId: req.params.submissionId, error: String(error) });
+      return res.status(503).json({ success: false, error: "Classification retry is unavailable." });
+    }
+  });
+
   // API Route: Complaint Status Tracking Endpoint
   app.get("/api/track/:trackingId", async (req, res) => {
     try {
       const { trackingId } = req.params;
       const cleanId = (trackingId || "").trim();
+      const firestore = getAdminFirestore();
+      const directSnapshot = await firestore.collection("submissions").doc(cleanId).get();
+      const querySnapshot = directSnapshot.exists ? null : await firestore.collection("submissions").where("id", "==", cleanId).limit(1).get();
+      const stored = directSnapshot.exists ? directSnapshot.data() : querySnapshot?.docs[0]?.data();
+      const storedId = directSnapshot.exists ? cleanId : querySnapshot?.docs[0]?.id;
+      if (!stored || !storedId) return res.status(404).json({ success: false, error: "Complaint not found." });
 
       const sampleSubmission = {
-        id: cleanId.startsWith("NV-") ? cleanId : `NV-${cleanId.toUpperCase()}`,
-        category: "roads",
-        urgency: 4,
-        district: "Patna",
-        state: "Bihar",
-        country: "India",
-        summary_english: "Deep potholes and broken road pavement causing acute vehicular congestion and accident risks.",
-        text: "Severe asphalt damage and deep unbarricaded craters on main arterial road affecting daily transit.",
-        language: "Hindi / English",
-        created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-        status: "classified",
-        photo_url: "",
+        id: stored.id || (String(storedId).startsWith("NV-") ? storedId : `NV-${String(storedId).slice(0, 6).toUpperCase()}`),
+        category: stored.category || "other",
+        urgency: stored.urgency ?? null,
+        district: stored.district || "Unknown",
+        state: stored.state || "",
+        country: stored.country || "India",
+        summary_english: stored.summary_english || stored.text || "",
+        text: stored.text || "",
+        language: stored.language || "Unknown",
+        created_at: stored.created_at || new Date().toISOString(),
+        status: stored.status || "pending",
+        photo_url: stored.photo_url || "",
       };
 
       const timeline = [
@@ -742,79 +849,6 @@ let geminiQuotaCooldownUntil = 0;
 let lastPriorityCache: { signature: string; timestamp: number; recommendations: any[] } | null = null;
 
 // High-accuracy heuristic rule-based classifier for instant response or quota cooldown
-function ruleBasedClassify(text: string, district?: string, country?: string) {
-  const lower = (text || "").toLowerCase();
-
-  let category = "roads";
-  let urgency = 3;
-
-  // Category detection with multilingual and domain keywords
-  if (
-    /water|paani|pipeline|leak|contamination|drain|tap|sewage|drinking water|jal|água|voda|shui|well|pump/.test(
-      lower
-    )
-  ) {
-    category = lower.includes("sewage") || lower.includes("drain") ? "sanitation" : "water";
-  } else if (
-    /electric|power|bijli|transformer|blackout|wire|voltage|load shedding|current|luz|svet|dian|generator|pole/.test(
-      lower
-    )
-  ) {
-    category = "electricity";
-  } else if (
-    /road|pothole|gaddha|asphalt|highway|street|bridge|traffic|tar|crater|estrada|doroga|lu|pavement/.test(
-      lower
-    )
-  ) {
-    category = "roads";
-  } else if (
-    /garbage|waste|trash|kachra|sanitation|gutter|drainage|dump|cleanliness|lixo|musor|laji|mosquito/.test(
-      lower
-    )
-  ) {
-    category = "sanitation";
-  } else if (
-    /health|hospital|clinic|doctor|phc|ambulance|medicine|swasthya|saúde|bolnitsa|yiyuan|patient|disease/.test(
-      lower
-    )
-  ) {
-    category = "health";
-  } else if (
-    /school|college|education|classroom|teacher|desk|student|shiksha|escola|shkola|xuexiao|blackboard/.test(
-      lower
-    )
-  ) {
-    category = "education";
-  }
-
-  // Urgency scoring
-  if (
-    /emergency|danger|death|fatal|collapsed|fire|explosion|flood|poison|outbreak|urgent|hazard|electrocution/.test(
-      lower
-    )
-  ) {
-    urgency = 5;
-  } else if (
-    /critical|acute|blocked|complete blackout|burst|severe|unusable|overflowing|accident|contaminated/.test(
-      lower
-    )
-  ) {
-    urgency = 4;
-  } else if (/minor|delay|cosmetic|slow|request|flicker|suggestion/.test(lower)) {
-    urgency = 2;
-  }
-
-  const cleanSummary = text.trim() ? (text.length > 90 ? text.slice(0, 87) + "..." : text) : "Infrastructure service grievance";
-
-  return {
-    category,
-    urgency,
-    summary_english: cleanSummary,
-    language_detected: "Detected",
-    keywords: [category, "infrastructure", "municipal"],
-  };
-}
-
 // Helper function to build fallback recommendations from submissions
 function buildFallbackRecommendations(aggregatedData: any[]) {
   const sorted = [...aggregatedData]
@@ -874,10 +908,12 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
   // API Route: Gemini Multilingual Complaint Classification Pipeline & Duplicate Detection & Vision Analysis
   app.post("/api/classify", async (req, res) => {
     const internalJobKey = process.env.INTERNAL_JOB_KEY;
-    if (internalJobKey && req.headers["x-internal-job-key"] !== internalJobKey) {
+    if (!internalJobKey || req.headers["x-internal-job-key"] !== internalJobKey) {
       return res.status(401).json({ success: false, error: "Classification is only available through the processing queue." });
     }
     try {
+      const validation = validateClassifyPayload(req.body || {});
+      if (!validation.isValid) return res.status(400).json({ success: false, error: "Invalid classification payload.", details: validation.errors });
       const { submissionId, docId, text, country, district, photo_url } = req.body || {};
       const targetId = submissionId || docId || "";
 
@@ -901,7 +937,7 @@ function buildFallbackRecommendations(aggregatedData: any[]) {
         console.warn("Firestore server-init notice in classify:", dbInitErr);
       }
 
-      const complaintText = redactPii(String(submissionData?.text || text || "Road crater causing traffic stoppage"));
+      const complaintText = redactPii(String(submissionData?.text || text || ""));
       const complaintCountry = submissionData?.country || country || "India";
       const complaintDistrict = submissionData?.district || district || "General District";
       const complaintPhotoUrl = submissionData?.photo_url || photo_url || req.body?.photo_url || "";
@@ -974,7 +1010,7 @@ Return JSON:
 }`;
 
               const dupResult = await ai.models.generateContent({
-                model: "gemini-3.7-flash",
+                model: getGeminiModelName(),
                 contents: dupCheckPrompt,
                 config: {
                   responseMimeType: "application/json",
@@ -1021,7 +1057,23 @@ Return JSON:
 
       // If circuit breaker is cooling down or API key is absent, use rule-based classifier
       if (!canUseGemini) {
-        const ruleClass = ruleBasedClassify(complaintText, complaintDistrict, complaintCountry);
+        const ruleClass = ruleBasedClassify(complaintText);
+        if (targetId && dbInstance) {
+          try {
+            const { updateDoc, doc } = await import("firebase/firestore");
+            await updateDoc(doc(dbInstance, "submissions", targetId), {
+              category: ruleClass.category,
+              urgency: ruleClass.urgency,
+              summary_english: ruleClass.summary_english,
+              language: ruleClass.language_detected,
+              classified_by: ruleClass.classified_by,
+              confidence: ruleClass.confidence,
+              status: "classified",
+            });
+          } catch (updateErr) {
+            console.warn("Firestore rule classification update notice:", updateErr);
+          }
+        }
         return res.json({
           success: true,
           submissionId: targetId,
@@ -1062,13 +1114,11 @@ Return this exact JSON structure:
              5=life-threatening emergency,
   'summary_english': 'One sentence summary in English under 20 words',
   'language_detected': 'detected language name in English',
-  'keywords': ['array', 'of', '3-5', 'key', 'problem', 'words']
+  'keywords': ['array', 'of', '3-5', 'key', 'problem', 'words'],
+  'confidence': 'high, medium, or low'
 }`;
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: userPrompt,
-          config: {
+        const generationConfig = {
             systemInstruction,
             responseMimeType: "application/json",
             responseSchema: {
@@ -1095,25 +1145,26 @@ Return this exact JSON structure:
                   items: { type: Type.STRING },
                   description: "Array of 3-5 key problem words",
                 },
+                confidence: {
+                  type: Type.STRING,
+                  description: "high, medium, or low confidence in this classification",
+                },
               },
-              required: ["category", "urgency", "summary_english", "language_detected", "keywords"],
+              required: ["category", "urgency", "summary_english", "language_detected", "keywords", "confidence"],
             },
-          },
-        });
-
-        const parsed = JSON.parse(response.text || "{}");
-        const validCategories = ["roads", "water", "electricity", "sanitation", "health", "education", "other"];
-        const category = validCategories.includes(parsed.category?.toLowerCase())
-          ? parsed.category.toLowerCase()
-          : "roads";
-
-        const classification = {
-          category,
-          urgency: Math.min(Math.max(Number(parsed.urgency) || 3, 1), 5),
-          summary_english: parsed.summary_english || complaintText.slice(0, 100),
-          language_detected: parsed.language_detected || "English",
-          keywords: Array.isArray(parsed.keywords) ? parsed.keywords : ["infrastructure"],
-        };
+          };
+        let classification;
+        let parseError: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const response = await ai.models.generateContent({ model: getGeminiModelName(), contents: userPrompt, config: generationConfig });
+            classification = parseGeminiClassification(response.text || "", complaintText);
+            break;
+          } catch (error) {
+            parseError = error;
+          }
+        }
+        if (!classification) throw parseError instanceof Error ? parseError : new Error("Gemini classification failed schema validation.");
 
         const dept = getDepartmentForCategory(classification.category);
         const updateData: Record<string, any> = {
@@ -1121,6 +1172,8 @@ Return this exact JSON structure:
           urgency: classification.urgency,
           summary_english: classification.summary_english,
           language: classification.language_detected,
+          classified_by: classification.classified_by,
+          confidence: classification.confidence,
           status: "classified",
           department_id: dept.id,
           department_name: dept.shortName,
@@ -1133,14 +1186,13 @@ Return this exact JSON structure:
         // ─────────────────────────────────────────────────────────────
         if (complaintPhotoUrl) {
           try {
-            const imageRes = await fetch(complaintPhotoUrl);
-            if (imageRes.ok) {
-              const imageBuffer = await imageRes.arrayBuffer();
-              const base64Image = Buffer.from(imageBuffer).toString("base64");
-              const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+            const image = await downloadVisionImage(String(complaintPhotoUrl));
+            if (image) {
+              const base64Image = image.buffer.toString("base64");
+              const contentType = image.mimeType;
 
               const visionResult = await ai.models.generateContent({
-                model: "gemini-3.7-flash",
+                model: getGeminiModelName(),
                 contents: [
                   {
                     role: "user",
@@ -1225,7 +1277,23 @@ Return this exact JSON structure:
           geminiQuotaCooldownUntil = Date.now() + 60000;
         }
 
-        const fallbackResult = ruleBasedClassify(complaintText, complaintDistrict, complaintCountry);
+        const fallbackResult = ruleBasedClassify(complaintText);
+        if (targetId && dbInstance) {
+          try {
+            const { updateDoc, doc } = await import("firebase/firestore");
+            await updateDoc(doc(dbInstance, "submissions", targetId), {
+              category: fallbackResult.category,
+              urgency: fallbackResult.urgency,
+              summary_english: fallbackResult.summary_english,
+              language: fallbackResult.language_detected,
+              classified_by: fallbackResult.classified_by,
+              confidence: fallbackResult.confidence,
+              status: "classified",
+            });
+          } catch (updateErr) {
+            console.warn("Firestore Gemini fallback update notice:", updateErr);
+          }
+        }
         return res.json({
           success: true,
           submissionId: targetId,
@@ -1241,6 +1309,24 @@ Return this exact JSON structure:
       incrementMetric("gemini_failures");
       console.error("Classification error in server:", err);
       const fallbackResult = ruleBasedClassify(req.body?.text || "");
+      if (fallbackResult && req.body?.submissionId) {
+        try {
+          const { initializeApp, getApps, getApp } = await import("firebase/app");
+          const { getFirestore, doc, updateDoc } = await import("firebase/firestore");
+          const fbApp = getApps().length > 0 ? getApp() : initializeApp(getServerFirebaseConfig());
+          await updateDoc(doc(getFirestore(fbApp), "submissions", req.body.submissionId), {
+            category: fallbackResult.category,
+            urgency: fallbackResult.urgency,
+            summary_english: fallbackResult.summary_english,
+            language: fallbackResult.language_detected,
+            classified_by: fallbackResult.classified_by,
+            confidence: fallbackResult.confidence,
+            status: "classified",
+          });
+        } catch (updateErr) {
+          console.warn("Firestore outer classification fallback update notice:", updateErr);
+        }
+      }
       return res.json({
         success: true,
         submissionId: req.body?.submissionId || "",
@@ -1271,12 +1357,8 @@ Return this exact JSON structure:
         source: payload.source || "web",
       });
 
-      // Trigger background classification
-      fetch(`http://localhost:${PORT}/api/classify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId: docRef.id }),
-      }).catch(() => {});
+      // Trigger background classification through the authenticated internal job path.
+      void triggerClassificationJob(docRef.id);
 
       return res.json({ success: true, id: docRef.id });
     } catch (err: any) {
@@ -1287,6 +1369,12 @@ Return this exact JSON structure:
 
   // API Route: AI Priority Recommendations
   app.post("/api/prioritize", async (req, res) => {
+    const authorization = String(req.headers.authorization || "");
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const session = verifyAdminSessionToken(token);
+    if (!session.valid || !session.payload) return res.status(401).json({ success: false, error: "A valid staff session is required." });
+    const validation = validatePrioritizePayload(req.body || {});
+    if (!validation.isValid) return res.status(400).json({ success: false, error: "Invalid prioritization payload.", details: validation.errors });
     try {
       const { submissions } = req.body || {};
       const activeList = Array.isArray(submissions) && submissions.length > 0 ? submissions : [];
@@ -1348,144 +1436,35 @@ Return this exact JSON structure:
       // Signature for caching (item count + top districts/categories)
       const dataSignature = `${activeList.length}_${aggregatedData.map(d => `${d.district}:${d.category}:${d.count}`).slice(0, 5).join('|')}`;
       const now = Date.now();
-
-      // Check cache (valid for 5 minutes if data signature matches)
-      if (
-        lastPriorityCache &&
-        lastPriorityCache.signature === dataSignature &&
-        now - lastPriorityCache.timestamp < 300000 &&
-        lastPriorityCache.recommendations.length > 0
-      ) {
-        return res.json({
-          success: true,
-          cached: true,
-          recommendations: lastPriorityCache.recommendations,
-        });
+      if (lastPriorityCache && lastPriorityCache.signature === dataSignature && now - lastPriorityCache.timestamp < 300000) {
+        return res.json({ success: true, cached: true, recommendations: lastPriorityCache.recommendations });
       }
 
+      const fallbackRecs = () => {
+        const recommendations = buildFallbackRecommendations(aggregatedData);
+        lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations };
+        return recommendations;
+      };
       const apiKey = process.env.GEMINI_API_KEY || "";
-      // If cooldown is active or no API key, instantly return heuristic recommendations
       if (!apiKey || now < geminiQuotaCooldownUntil) {
-        const recs = buildFallbackRecommendations(aggregatedData);
-        lastPriorityCache = {
-          signature: dataSignature,
-          timestamp: now,
-          recommendations: recs,
-        };
-        return res.json({
-          success: true,
-          engine: "heuristic-optimization",
-          recommendations: recs,
-        });
+        return res.json({ success: true, engine: "rule-based", recommendations: fallbackRecs() });
       }
 
       try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build",
-            },
-          },
-        });
-
-        const userPrompt = `You are a senior government infrastructure advisor to the Ministry of Urban Development. 
-
-Based on this citizen complaint data from across the nation, generate the TOP 10 priority infrastructure projects that deserve immediate government investment and attention.
-
-Data: ${JSON.stringify(aggregatedData.slice(0, 20))}
-
-For each recommendation return:
-{
-  rank: 1-10,
-  category: string,
-  district: string,
-  state: string,
-  count: number,
-  avg_urgency: number,
-  ai_rationale: string (2-3 sentences explaining WHY this is priority — mention specific numbers, impact on population, and urgency level),
-  estimated_population_affected: number,
-  recommended_action: string (one specific actionable step government should take within 30 days),
-  brics_parallel: string (one sentence about how this same problem exists in another BRICS nation, showing cross-border applicability)
-}
-
-Return as JSON array of objects.`;
-
+        const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
         const response = await ai.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: userPrompt,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  rank: { type: Type.INTEGER },
-                  category: { type: Type.STRING },
-                  district: { type: Type.STRING },
-                  state: { type: Type.STRING },
-                  count: { type: Type.INTEGER },
-                  avg_urgency: { type: Type.NUMBER },
-                  ai_rationale: { type: Type.STRING },
-                  estimated_population_affected: { type: Type.INTEGER },
-                  recommended_action: { type: Type.STRING },
-                  brics_parallel: { type: Type.STRING },
-                },
-                required: [
-                  "rank",
-                  "category",
-                  "district",
-                  "state",
-                  "count",
-                  "avg_urgency",
-                  "ai_rationale",
-                  "estimated_population_affected",
-                  "recommended_action",
-                  "brics_parallel",
-                ],
-              },
-            },
-          },
+          model: getGeminiModelName(),
+          contents: `Generate up to 10 priority infrastructure recommendations as a JSON array from this data: ${JSON.stringify(aggregatedData.slice(0, 20))}`,
+          config: { responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT } } },
         });
-
-        const parsed = JSON.parse(response.text || "[]");
-        const finalRecs = Array.isArray(parsed) && parsed.length > 0
-          ? parsed
-          : buildFallbackRecommendations(aggregatedData);
-
-        lastPriorityCache = {
-          signature: dataSignature,
-          timestamp: Date.now(),
-          recommendations: finalRecs,
-        };
-
-        return res.json({
-          success: true,
-          engine: "gemini-3.7-flash",
-          recommendations: finalRecs,
-        });
+        let parsed: any[] = [];
+        try { parsed = JSON.parse(response.text || "[]"); } catch { parsed = []; }
+        const recommendations = Array.isArray(parsed) && parsed.length > 0 ? parsed : fallbackRecs();
+        lastPriorityCache = { signature: dataSignature, timestamp: Date.now(), recommendations };
+        return res.json({ success: true, engine: getGeminiModelName(), recommendations });
       } catch (geminiApiError: any) {
-        const isQuota =
-          geminiApiError?.status === "RESOURCE_EXHAUSTED" ||
-          geminiApiError?.message?.includes("429") ||
-          geminiApiError?.message?.includes("Quota exceeded");
-        if (isQuota) {
-          geminiQuotaCooldownUntil = Date.now() + 60000;
-        }
-
-        const fallbackRecs = buildFallbackRecommendations(aggregatedData);
-        lastPriorityCache = {
-          signature: dataSignature,
-          timestamp: Date.now(),
-          recommendations: fallbackRecs,
-        };
-
-        return res.json({
-          success: true,
-          engine: "heuristic-optimization",
-          recommendations: fallbackRecs,
-        });
+        if (geminiApiError?.status === "RESOURCE_EXHAUSTED" || geminiApiError?.message?.includes("429")) geminiQuotaCooldownUntil = Date.now() + 60000;
+        return res.json({ success: true, engine: "rule-based", recommendations: fallbackRecs() });
       }
     } catch (prioritizeErr: any) {
       console.error("Prioritization error in server:", prioritizeErr);
@@ -1504,7 +1483,7 @@ Return as JSON array of objects.`;
 
     if (
       mode === "subscribe" &&
-      token === (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "nagarvaani_webhook_2026")
+      token === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN
     ) {
       console.log("WhatsApp webhook verified");
       res.status(200).send(challenge);
@@ -1515,56 +1494,103 @@ Return as JSON array of objects.`;
 
   // ─── WhatsApp Incoming Message Handler (POST) ───────────
   app.post("/api/whatsapp/webhook", async (req, res) => {
-    res.sendStatus(200); // Always respond 200 immediately
-
     try {
+      const rawBody = (req as express.Request & { rawBody?: Buffer }).rawBody || Buffer.from(JSON.stringify(req.body || {}));
+      const secret = process.env.META_APP_SECRET;
+      const allowUnsigned = canSkipWebhookSignature(secret, environment, process.env.APP_MODE || process.env.VITE_APP_MODE);
+      if (!secret && allowUnsigned) {
+        logStructured("warn", "whatsapp_signature_verification_skipped", { reason: "META_APP_SECRET is unset in demo/development" });
+      }
+      if (!verifyMetaSignature(rawBody, String(req.headers["x-hub-signature-256"] || ""), secret, allowUnsigned)) {
+        return res.sendStatus(401);
+      }
+
       const body = req.body;
-      if (!body?.entry?.[0]?.changes?.[0]?.value?.messages) return;
+      if (!body?.entry?.[0]?.changes?.[0]?.value?.messages) return res.sendStatus(200);
 
       const msg = body.entry[0].changes[0].value.messages[0];
+      if (!claimWhatsAppMessage(String(msg.id || ""))) return res.sendStatus(200);
+      res.sendStatus(200);
       const from = msg.from; // WhatsApp phone number
       const msgType = msg.type; // text, image, audio, location
 
       let complaintText = "";
       let photoUrl = "";
-      let lat = 20.5937;
-      let lng = 78.9629;
+      let lat: number | null = null;
+      let lng: number | null = null;
+      let locationSource: "gps" | "district_geocode" | "unknown" = "unknown";
+      let detectedLanguage = "English";
 
       if (msgType === "text") {
         complaintText = msg.text?.body || "";
       } else if (msgType === "image") {
-        // Download image from WhatsApp
         const mediaId = msg.image?.id;
         if (mediaId && process.env.WHATSAPP_ACCESS_TOKEN) {
           try {
-            const mediaRes = await fetch(
-              `https://graph.facebook.com/v18.0/${mediaId}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-                },
-              }
-            );
-            const mediaData: any = await mediaRes.json();
-            photoUrl = mediaData.url || "";
+            const hasAdminCredentials = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS);
+            if (hasAdminCredentials) {
+              const media = await downloadWhatsAppMedia(mediaId, process.env.WHATSAPP_ACCESS_TOKEN, "image");
+              const { getAdminStorageBucket } = await import("./lib/firebaseAdmin");
+              const bucket = getAdminStorageBucket();
+              const file = bucket.file(`whatsapp/${Date.now()}-${randomUUID()}.${media.mimeType.split("/")[1]}`);
+              await file.save(media.buffer, { metadata: { contentType: media.mimeType } });
+              const signedUrls = await file.getSignedUrl({ action: "read", expires: "01-01-2499" });
+              photoUrl = signedUrls[0];
+            } else {
+              logStructured("warn", "whatsapp_media_skipped", { reason: "Firebase Admin credentials are unavailable" });
+            }
           } catch (mErr) {
-            console.warn("Failed to fetch WhatsApp media metadata:", mErr);
+            logStructured("error", "whatsapp_image_processing_failed", { error: String(mErr) });
           }
         }
         complaintText = msg.image?.caption || "Photo complaint";
       } else if (msgType === "audio") {
-        complaintText = "[Voice message received — being transcribed]";
+        const mediaId = msg.audio?.id;
+        if (!mediaId || !process.env.WHATSAPP_ACCESS_TOKEN) throw new Error("WhatsApp audio media is unavailable");
+        const media = await downloadWhatsAppMedia(mediaId, process.env.WHATSAPP_ACCESS_TOKEN, "audio");
+        const transcript = await transcribeAudio(media.buffer, media.mimeType);
+        complaintText = redactPii(transcript.english_translation || transcript.original_text);
+        detectedLanguage = transcript.language_detected;
       } else if (msgType === "location") {
-        lat = msg.location?.latitude || 20.5937;
-        lng = msg.location?.longitude || 78.9629;
-        complaintText = `Location pin reported at ${lat}, ${lng}`;
+        lat = Number(msg.location?.latitude);
+        lng = Number(msg.location?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error("WhatsApp location is invalid");
+        locationSource = "gps";
+        try {
+          const { initializeApp, getApps, getApp } = await import("firebase/app");
+          const { getFirestore, collection, query, where, limit, getDocs, updateDoc, doc } = await import("firebase/firestore");
+          const fbApp = getApps().length > 0 ? getApp() : initializeApp(getServerFirebaseConfig());
+          const snapshot = await getDocs(query(
+            collection(getFirestore(fbApp), "submissions"),
+            where("source", "==", "whatsapp"),
+            where("whatsapp_from", "==", from),
+            limit(20),
+          ));
+          const cutoff = Date.now() - 10 * 60 * 1000;
+          const recent = snapshot.docs
+            .map((entry: any) => ({ ref: entry.ref, data: entry.data() }))
+            .filter((entry: any) => new Date(String(entry.data.created_at || "")).getTime() >= cutoff)
+            .sort((a: any, b: any) => String(b.data.created_at).localeCompare(String(a.data.created_at)))[0];
+          if (!recent) {
+            await sendWhatsAppMessage(from, "Please send your complaint first, then share your location within 10 minutes.");
+            return;
+          }
+          await updateDoc(doc(getFirestore(fbApp), "submissions", recent.ref.id), { lat, lng, location_source: locationSource });
+          await sendWhatsAppMessage(from, `Location attached to tracking ID NV-${recent.ref.id.slice(0, 6).toUpperCase()}.`);
+          return;
+        } catch (locationError) {
+          logStructured("error", "whatsapp_location_attachment_failed", { error: String(locationError) });
+          await sendWhatsAppMessage(from, "I could not attach that location. Please try sending it again.");
+          return;
+        }
       }
 
+      complaintText = redactPii(complaintText);
       if (!complaintText && !photoUrl) return;
 
       const submission = {
         text: complaintText,
-        language: "auto",
+        language: detectedLanguage,
         category: "other",
         urgency: 3,
         summary_english: complaintText.slice(0, 100),
@@ -1573,7 +1599,8 @@ Return as JSON array of objects.`;
         country: "India",
         lat,
         lng,
-        photo_url: photoUrl,
+        location_source: locationSource,
+        photo_url: photoUrl || null,
         created_at: new Date().toISOString(),
         status: "pending",
         source: "whatsapp",
@@ -1598,18 +1625,14 @@ Return as JSON array of objects.`;
 
       const trackingId = `NV-${docId.slice(0, 6).toUpperCase()}`;
 
-      // Trigger classification in background
-      fetch(`http://localhost:${PORT}/api/classify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId: docId }),
-      }).catch(() => {});
+      const classified = await triggerClassificationJob(docId);
+      if (!classified) logStructured("error", "whatsapp_submission_classification_failed", { submissionId: docId });
 
       // Send acknowledgement back to citizen via WhatsApp
       if (from) {
         await sendWhatsAppMessage(
           from,
-          `✅ *NagarVaani* has received your report!\n\n` +
+          `${detectedLanguageReply(detectedLanguage, "✅ *NagarVaani* has received your report!", "✅ *NagarVaani* ने आपकी शिकायत दर्ज कर ली है!")}\n\n` +
             `🔖 *Tracking ID:* ${trackingId}\n` +
             `📍 Track your complaint at:\n` +
             `${process.env.APP_URL || "https://nagarvaani.com"}/?track=${trackingId}\n\n` +
@@ -1630,7 +1653,7 @@ Return as JSON array of objects.`;
     }
     try {
       await fetch(
-        `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        `https://graph.facebook.com/${graphApiVersion()}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
         {
           method: "POST",
           headers: {
@@ -1649,6 +1672,12 @@ Return as JSON array of objects.`;
       console.error("WhatsApp message send error:", waSendErr);
     }
   }
+
+  app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) return next(error);
+    const status = error?.type === "entity.too.large" ? 413 : Number(error?.status) || 500;
+    return res.status(status).json({ success: false, error: status === 413 ? "Request body is too large." : "Request failed." });
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

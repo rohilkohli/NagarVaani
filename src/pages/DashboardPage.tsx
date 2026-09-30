@@ -142,6 +142,8 @@ export default function DashboardPage({
           photo_url: d.photo_url || undefined,
           created_at: d.created_at ? new Date(d.created_at) : new Date(),
           status: (d.status as Submission["status"]) || "classified",
+          classified_by: d.classified_by,
+          confidence: d.confidence,
           upvotes: Number(d.upvotes) || 0,
           department_id: d.department_id || undefined,
           department_name: d.department_name || undefined,
@@ -235,6 +237,27 @@ export default function DashboardPage({
     }
     setToastMessage(`Copied tracking ID: ${id}`);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleRetryClassification = async (row: Submission, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setOpenActionRowId(null);
+    const docId = row.firestoreId || row.id;
+    if (!docId) return;
+    try {
+      const token = sessionStorage.getItem("nv_dashboard_token");
+      const response = await fetch(`/api/admin/submissions/${encodeURIComponent(docId)}/reclassify`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("Classification retry failed");
+      setSubmissions((prev) => prev.map((item) => item.id === row.id ? { ...item, status: "pending" } : item));
+      setToastMessage("Classification retry queued.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch {
+      setToastMessage("Classification retry could not be queued.");
+      setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
   // Bulk status update handler
@@ -759,6 +782,11 @@ export default function DashboardPage({
                               Pending
                             </span>
                           )}
+                          {row.status === "classification_failed" && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] bg-[rgba(239,68,68,0.12)] text-[#f87171] border border-[rgba(239,68,68,0.25)]">
+                              Classification Failed
+                            </span>
+                          )}
                           {row.status === "acknowledged" && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] bg-[rgba(245,158,11,0.12)] text-[#fbbf24] border border-[rgba(245,158,11,0.25)]">
                               Acknowledged
@@ -783,6 +811,11 @@ export default function DashboardPage({
                           {(row.status === "classified" || !row.status) && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] bg-[rgba(59,130,246,0.12)] text-[#60a5fa] border border-[rgba(59,130,246,0.25)]">
                               Classified
+                            </span>
+                          )}
+                          {row.classified_by && (
+                            <span className="ml-1 inline-flex items-center rounded-[4px] border border-[var(--border-dim)] px-1 py-0.5 text-[9px] text-[var(--text-tertiary)]">
+                              {row.classified_by === "gemini" ? "AI-classified" : "Auto-sorted (offline mode)"}
                             </span>
                           )}
                         </td>
@@ -848,6 +881,15 @@ export default function DashboardPage({
                                   <span>🚩</span>
                                   <span>Flag as Priority</span>
                                 </button>
+                                {row.status === "classification_failed" && sessionStorage.getItem("nv_dashboard_role") === "operator" && (
+                                  <button
+                                    onClick={(e) => handleRetryClassification(row, e)}
+                                    className="w-full px-3 py-1.5 text-left text-[var(--text-primary)] hover:bg-[var(--bg-surface)] flex items-center gap-2 cursor-pointer transition-colors"
+                                  >
+                                    <span>↻</span>
+                                    <span>Retry Classification</span>
+                                  </button>
+                                )}
                                 <div className="my-1 border-t border-[var(--border-dim)]" />
                                 <button
                                   onClick={(e) => handleCopyTrackingId(row.id, e)}
@@ -951,7 +993,7 @@ export default function DashboardPage({
                   </span>
                 </div>
                 <div className="text-[12px] text-[var(--text-secondary)] font-mono">
-                  models/gemini-3.7-flash
+                  Gemini Flash
                 </div>
                 <span className="inline-block text-[11px] font-semibold text-[var(--green)] bg-[rgba(16,185,129,0.1)] px-2 py-0.5 rounded-[3px]">
                   Active & Operational

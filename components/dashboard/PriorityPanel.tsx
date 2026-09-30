@@ -244,7 +244,12 @@ export default function PriorityPanel({
       try {
         const res = await fetch("/api/prioritize", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(typeof window !== "undefined" && sessionStorage.getItem("nv_dashboard_token")
+              ? { Authorization: `Bearer ${sessionStorage.getItem("nv_dashboard_token")}` }
+              : {}),
+          },
           body: JSON.stringify({ submissions }),
         });
 

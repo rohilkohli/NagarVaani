@@ -111,13 +111,19 @@ VITE_FIREBASE_APP_ID=
 VITE_GOOGLE_MAPS_API_KEY= # From Google Cloud Console
 ADMIN_SESSION_SECRET=      # Long random secret used only for short-lived staff sessions
 INTERNAL_JOB_KEY=          # Long random secret for internal asynchronous AI job dispatch
+GRAPH_API_VERSION=v23.0    # Meta Graph API version used by WhatsApp media and replies
 PII_REDACTION_ENABLED=true # Redact contact and identity patterns before Gemini requests
 RETENTION_DAYS=365         # Retention policy used by scheduled deletion jobs
 WHATSAPP_PHONE_NUMBER_ID= # Meta Business WhatsApp Cloud API
 WHATSAPP_ACCESS_TOKEN=    # Meta Cloud API System User Token
-WHATSAPP_WEBHOOK_VERIFY_TOKEN= # e.g. nagarvaani_webhook_2026
+WHATSAPP_WEBHOOK_VERIFY_TOKEN= # Set a private random verification token
 META_APP_SECRET=          # Meta App Secret
 ```
+
+WhatsApp message idempotency is held in a bounded, 10,000-entry per-process LRU
+with a 24-hour TTL. It is per server instance; production deployments should
+also use a shared queue or Firestore idempotency record for cross-instance retry
+deduplication.
 
 ### Staff authentication and roles
 
@@ -147,7 +153,7 @@ complaint status.
 2. Create an app → Add WhatsApp product
 3. Get a test phone number from Meta
 4. Set webhook URL: `{YOUR_CLOUD_RUN_URL}/api/whatsapp/webhook`
-5. Set verify token: `nagarvaani_webhook_2026`
+5. Set verify token from `WHATSAPP_WEBHOOK_VERIFY_TOKEN`.
 6. Subscribe to: `messages`, `message_deliveries`
 7. Add env vars: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `META_APP_SECRET`
 8. Citizens can now report by WhatsApp to your number!

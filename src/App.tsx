@@ -11,8 +11,8 @@ import { useTheme } from "@/lib/themeContext";
 import { Submission, ComplaintCategory } from "@/lib/types";
 import { getRuntimeMode, isDemoMode } from "@/lib/appMode";
 
-const DashboardPage = lazy(() => import("@/app/dashboard/page"));
-const CitizenPage = lazy(() => import("@/app/citizen/page"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage.tsx"));
+const CitizenPage = lazy(() => import("./pages/CitizenPage.tsx"));
 const TrackComplaint = lazy(() => import("@/components/citizen/TrackComplaint"));
 
 function RouteFallback() {

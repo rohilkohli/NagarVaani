@@ -16,7 +16,9 @@ export interface Submission {
   lng: number;
   photo_url?: string;
   created_at: Date;
-  status: 'pending' | 'classified' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority' | 'duplicate';
+  status: 'pending' | 'classified' | 'classification_failed' | 'acknowledged' | 'in_progress' | 'resolved' | 'priority' | 'duplicate';
+  classified_by?: 'gemini' | 'rule-based';
+  confidence?: 'high' | 'medium' | 'low';
   upvotes?: number;
   source?: 'web' | 'whatsapp' | 'voice' | 'api' | string;
   whatsapp_from?: string;

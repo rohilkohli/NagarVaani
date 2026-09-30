@@ -36,6 +36,11 @@ NagarVaani is an AI-powered municipal intelligence platform for citizen grievanc
 3. Add the key to `.env.local`:
    ```env
    GEMINI_API_KEY=your_gemini_api_key
+   META_APP_SECRET=your_meta_app_secret
+   WHATSAPP_WEBHOOK_VERIFY_TOKEN=your_webhook_verify_token
+   WHATSAPP_ACCESS_TOKEN=your_whatsapp_cloud_api_token
+   WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
+   INTERNAL_JOB_KEY=long-random-internal-job-key
    ```
 
 ### Step 5: Enable Google Maps API (Optional)
@@ -80,3 +85,20 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
   - `/api/prioritize` — AI algorithmic budget triage.
   - `/api/transcribe` — Multilingual audio transcription.
   - `/api/seed` — Demo sandbox generation.
+
+### WhatsApp Webhook
+
+Meta sends signed events to `POST /api/whatsapp/webhook`. Production requires
+`META_APP_SECRET` and `INTERNAL_JOB_KEY`; development/demo mode may omit the
+Meta secret and logs that signature verification was skipped. To exercise the
+signed local flow, start the server with those variables and run:
+
+```bash
+META_APP_SECRET=demo-meta-secret INTERNAL_JOB_KEY=local-job-key npm run dev
+META_APP_SECRET=demo-meta-secret npm exec tsx scripts/simulate-whatsapp.ts
+```
+
+Set `WHATSAPP_SAMPLE_IMAGE_ID` and `WHATSAPP_SAMPLE_AUDIO_ID` to real Graph API
+media IDs when testing image and audio downloads. Text submissions are classified
+through the authenticated internal job path and appear in the dashboard after
+processing.

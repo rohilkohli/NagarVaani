@@ -175,13 +175,7 @@ export default function RealCitizenMap({
   }, [customCoords, locationInfo]);
 
   // Google Maps API Key setup
-  const mapsKey =
-    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
-    (typeof window !== "undefined" &&
-      ((window as any).__ENV?.VITE_GOOGLE_MAPS_API_KEY ||
-        (window as any).VITE_GOOGLE_MAPS_API_KEY ||
-        (window as any).NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)) ||
-    "AIzaSyDeh5qMcJgn5Rlxs0oYT8PCFKvICz7YoI0";
+  const mapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: "nagarvaani-google-maps-script",
@@ -415,7 +409,18 @@ export default function RealCitizenMap({
         }`}
         style={{ height: isFullscreen ? "100%" : height }}
       >
-        {isLoaded && !loadError ? (
+        {!mapsKey ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[var(--bg-elevated)] p-5 text-center">
+            <MapPin className="w-8 h-8 text-[var(--text-tertiary)]" />
+            <div>
+              <p className="font-semibold text-[var(--text-primary)]">Map unavailable in this environment</p>
+              <p className="mt-1 text-[12px] text-[var(--text-secondary)]">Location can still be selected from the static reference list.</p>
+            </div>
+            <ul className="text-left text-[12px] text-[var(--text-secondary)] space-y-1">
+              {[district, state, country].filter(Boolean).map((place) => <li key={place}>• {place}</li>)}
+            </ul>
+          </div>
+        ) : isLoaded && !loadError ? (
           <GoogleMap
             mapContainerStyle={MAP_CONTAINER_STYLE}
             center={activePosition}
