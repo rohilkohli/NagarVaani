@@ -418,12 +418,13 @@ Return JSON strictly in this format:
         const response = await ai.models.generateContent({
           model: getGeminiModelName(),
           contents: userPrompt,
-          config: { responseMimeType: "application/json", maxOutputTokens: 300 },
+          config: { responseMimeType: "application/json", maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
         });
         classResult = parseGeminiClassification(response.text || "", complaintText);
         classifiedBy = "gemini";
         demoGeminiCallsToday += 1;
       } catch (geminiErr: any) {
+        console.error("[demo/submit] Gemini classification failed, using rule-based fallback:", geminiErr?.status || "", String(geminiErr?.message || geminiErr).slice(0, 300));
         if (geminiErr?.status === "RESOURCE_EXHAUSTED" || geminiErr?.message?.includes("429")) {
           geminiQuotaCooldownUntil = Date.now() + 60000;
         }
