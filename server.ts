@@ -415,11 +415,17 @@ District: ${district}
 
 Return JSON strictly in this format:
 {"category":"roads|water|electricity|sanitation|health|education|other","urgency":1-5,"summary_english":"under 20 words","english_translation":"full English translation","language_detected":"language name","keywords":["array","of","3-5","words"],"confidence":"high|medium|low"}`;
-        const response = await ai.models.generateContent({
-          model: getGeminiModelName(),
-          contents: userPrompt,
-          config: { responseMimeType: "application/json", maxOutputTokens: 2048 },
-        });
+        const GEMINI_DEMO_TIMEOUT_MS = Number(process.env.GEMINI_DEMO_TIMEOUT_MS || 8000);
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model: getGeminiModelName(),
+            contents: userPrompt,
+            config: { responseMimeType: "application/json", maxOutputTokens: 2048 },
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini timed out after ${GEMINI_DEMO_TIMEOUT_MS}ms`)), GEMINI_DEMO_TIMEOUT_MS)
+          ),
+        ]);
         classResult = parseGeminiClassification(response.text || "", complaintText);
         classifiedBy = "gemini";
         demoGeminiCallsToday += 1;
