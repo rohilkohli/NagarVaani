@@ -429,7 +429,7 @@ export default function TrackComplaint({
                     </h4>
                     <span className="px-1.5 py-0.5 rounded-[4px] bg-[var(--brand-subtle)] text-[var(--brand-secondary)] border border-[var(--brand-primary)]/30 text-[10px] font-mono font-bold flex items-center gap-1">
                       <Sparkles className="w-2.5 h-2.5" />
-                      {submission.classified_by === "gemini" ? "AI-classified" : "Auto-sorted (offline mode)"}
+                      {submission?.classified_by === "gemini" ? "AI-classified" : "Auto-sorted (offline mode)"}
                     </span>
                   </div>
                   <span className="text-[12px] font-medium text-[var(--green)]">Completed</span>

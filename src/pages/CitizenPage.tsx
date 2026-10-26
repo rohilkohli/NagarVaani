@@ -565,6 +565,34 @@ export default function CitizenPage({
       return;
     }
 
+    // Demo sandbox: wait for the server so the reference shown to the user is the id the sandbox stores
+    if (isDemoMode()) {
+      try {
+        const demoRes = await fetch("/api/demo/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newRecord),
+        });
+        const demoData = await demoRes.json();
+        if (!demoRes.ok || !demoData.success) {
+          throw new Error(demoData.error || "Demo submission could not be processed.");
+        }
+        if (demoData.submission) {
+          newRecord.id = demoData.trackingId || demoData.submission.id || newRecord.id;
+          newRecord.category = demoData.submission.category || newRecord.category;
+          newRecord.urgency = demoData.submission.urgency || newRecord.urgency;
+          newRecord.summary_english = demoData.submission.summary_english || newRecord.summary_english;
+          newRecord.language = demoData.submission.language || newRecord.language;
+          newRecord.classified_by = demoData.submission.classified_by;
+          newRecord.confidence = demoData.submission.confidence;
+        }
+      } catch (demoErr: any) {
+        setQuickError(demoErr?.message || "Submission failed. Please try again.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     // 1. Show success immediately to the user (instant <30s response)
     setDistrict(locationLabel);
     setIsSavedOffline(false);
@@ -577,24 +605,7 @@ export default function CitizenPage({
     // 2. Perform background processing (Storage upload, Gemini classify, and Firestore write)
     (async () => {
       try {
-        if (isDemoMode()) {
-          const demoRes = await fetch("/api/demo/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newRecord),
-          });
-          if (demoRes.ok) {
-            const demoData = await demoRes.json();
-            if (demoData.submission) {
-              newRecord.category = demoData.submission.category || newRecord.category;
-              newRecord.urgency = demoData.submission.urgency || newRecord.urgency;
-              newRecord.summary_english = demoData.submission.summary_english || newRecord.summary_english;
-              newRecord.classified_by = demoData.submission.classified_by;
-              newRecord.confidence = demoData.submission.confidence;
-            }
-          }
-          return;
-        }
+        if (isDemoMode()) return; // demo submit already completed above
 
         let finalPhotoUrl = "";
         if (photoFile) {
