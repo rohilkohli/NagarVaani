@@ -418,7 +418,7 @@ Return JSON strictly in this format:
         const response = await ai.models.generateContent({
           model: getGeminiModelName(),
           contents: userPrompt,
-          config: { responseMimeType: "application/json", maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+          config: { responseMimeType: "application/json", maxOutputTokens: 2048 },
         });
         classResult = parseGeminiClassification(response.text || "", complaintText);
         classifiedBy = "gemini";
